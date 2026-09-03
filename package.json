@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
+    "make-fixtures": "tsx scripts/make-sample-dxf.ts",
     "test": "vitest run"
   },
   "dependencies": {

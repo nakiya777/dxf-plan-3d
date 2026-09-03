@@ -18,6 +18,7 @@ DXF の平面図を読み込み、壁（開口部・階段付き）を立ち上�
 | `specs/001-dxf-massing-mvp/reference/` | 参考動画と読み取り済みフレーム（1 秒刻みのタイル画像、UI パネル拡大など） |
 | `specs/001-dxf-massing-mvp/prototype/` | 壁認識ルールの否定実験（Python + ezdxf）。設計書 §7.0 の根拠。実装には使わない |
 | `fixtures/forest-s/` | マスター提供の実図面 DXF 一式（2×4 キットハウス「フォレスト S」、Jw_cad 形式 R12・Shift_JIS）。主フィクスチャは `平面立面図.dxf` |
+| `fixtures/sample-house*.dxf` | 自作フィクスチャ（動画相当のサンプル住宅。1 階と 2 階を X 方向に 12,000 mm 離して横並び）。通り芯バブルと直階段を含む。UTF-8 版・Shift_JIS 版（AC1015 + ANSI_932）・壁芯レイヤー付き版の 3 変種。`npm run make-fixtures` で `scripts/make-sample-dxf.ts` から再生成する生成物だが、テストの再現性のためコミットしている。生成ロジックを変えたら再生成してコミットすること（`src/dxf/fixtures.test.ts` が両者の一致を検査する） |
 
 ## 参考動画について
 

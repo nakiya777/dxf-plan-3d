@@ -19,12 +19,12 @@
 - コミットは 1 タスク 1 回以上。メッセージは `feat|test|chore: 日本語の要約` とし、末尾に次のトレーラーを付ける
 
 ```
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 ```
 
 - コード内のコメントと docstring は日本語。変数名は英語
 - 依存を足したら **`supply-chain-check` スキル**を呼ぶ（Task 1 と Task 17）
-- 座標は設計書 §4.3 の不変条件に従う。モデルは mm・Z 上、シーンは m・Y 上。変換は `src/viewer/coords.ts` の 1 か所だけ
+- 座標は設計書 §4.3 の不変条件に従う。モデルは mm・Z 上、シーンは m・Y 上。変換は `src/geometry/coords.ts` の 1 か所だけ
 
 ## タスク一覧（設計書 §15 のフェーズ対応）
 
@@ -70,10 +70,14 @@ npm create vite@latest . -- --template react-ts
 
 ```bash
 npm install -E react react-dom three dxf-parser polygon-clipping
-npm install -E -D typescript vite @vitejs/plugin-react vitest @types/react @types/react-dom @types/three @tarikjabiri/dxf iconv-lite @playwright/test tsx
+npm install -E -D typescript vite @vitejs/plugin-react vitest @types/node @types/react @types/react-dom @types/three @tarikjabiri/dxf iconv-lite @playwright/test tsx
 ```
 
 `supply-chain-check` スキルを呼んで監査する。`.nvmrc` に `22` を書く。
+
+`iconv-lite` と `@tarikjabiri/dxf` は `scripts/make-sample-dxf.ts` でしか使わないので **devDependencies** に置く（実行時の Shift_JIS 判定はブラウザ標準の `TextDecoder`）。取り違えると 200 KB 級の不要コードがバンドルに入る。
+
+**`@types/node` を入れた副作用:** Node のグローバル型が `src/ui` `src/viewer` にも及び、`setTimeout` の戻り値が `number` ではなく `NodeJS.Timeout` になる。タイマー ID を保持する場面では `ReturnType<typeof setTimeout>` と書く（Task 15 で該当）。
 
 **Step 3: 設定ファイル**
 
@@ -154,7 +158,7 @@ npm run dev
 git add -A
 git commit -m "chore: Vite + React + three.js の雛形と型定義
 
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
@@ -165,6 +169,10 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Create: `scripts/make-sample-dxf.ts`
 - Create: `fixtures/sample-house.dxf` `fixtures/sample-house-sjis.dxf` `fixtures/sample-house-with-centerline.dxf`（生成物。コミットする）
 - Test: `src/dxf/fixtures.test.ts`
+
+**Step 0: Task 1 からの申し送りを片付ける**
+
+`package.json` の `"test"` から `--passWithNoTests` を外す。Task 1 ではテストが 1 件も無いために必要だったが、このタスクで最初のテストが入る。**このフラグを残すと、テストファイル名を打ち間違えて vitest が 0 件しか収集できなかったときに、赤くなるべき手順が緑で通る**（`vitest.config.ts` の `include` は `src/**/*.test.ts` に絞ってあるので、`.test.tsx` にした瞬間や `src/` の外に置いた瞬間に無言で 0 件になる）。Step 1 のテストと同じコミットで外す。
 
 **Step 1: 失敗するテスト**
 
@@ -197,6 +205,8 @@ Expected: FAIL（ファイルが無い）
 **Step 3: 生成スクリプト**
 
 `scripts/make-sample-dxf.ts`（`npx tsx scripts/make-sample-dxf.ts` で実行）:
+
+> **この節のコードは着手時の下書きである。** 実装後のレビューを経て、生成ロジックは `scripts/sample-dxf.ts`（副作用なし・`buildDxf()` と `buildSjisText()` を export）と `scripts/make-sample-dxf.ts`（書き出すだけの実行部）に分かれ、レイヤー名は `LAYER` 定数に集約され、階段の深さは踏面数 × 間隔から導く形になった。**現在の正はコミット済みのファイルであり、この下書きではない。** 実行は `npm run make-fixtures`。
 
 ```ts
 /**
@@ -277,7 +287,7 @@ function makePlan(dxf: DxfWriter, ox: number, floor: 1 | 2, withCenterline: bool
     for (const [x, y, s] of [[1200, 5500, '洋室A'], [5500, 5500, '洋室B'], [1200, 1500, '洋室C'], [5500, 1500, '洋室D'], [4200, 1500, '廊下']] as const) text('文字', x, y, 250, s);
   }
 
-  // 階段: 踏面 9 本（間隔 300）+ 矢印線 + UP/DN 文字
+  // 階段: 踏面線 10 本（間隔 300、踏面は 9 段）+ 側線 2 本 + 矢印線 3 本 + UP/DN 文字
   function stair(sx: number, sy: number, w: number, d: number, _axis: 'y', label: 'UP' | 'DN') {
     for (let i = 0; i <= 9; i++) line('階段', sx, sy + i * 300, sx + w, sy + i * 300);
     line('階段', sx, sy, sx, sy + d); line('階段', sx + w, sy, sx + w, sy + d);
@@ -332,6 +342,28 @@ Expected: `fixtures written`、テスト 2 件 PASS。
 
 `python -c "import ezdxf; ..."` は使わず、Task 4 の 2D ビューで見るまで待ってよい。ただし Shift_JIS 版のヘッダに `$DWGCODEPAGE` が入ったことだけ `head -c 400 fixtures/sample-house-sjis.dxf` で確認する。
 
+**生成物の実測値（2026-09-03。後続タスクの期待値はこれに合わせる）**
+
+`sample-house.dxf` は 223 エンティティ。通り芯の円の半径まで含めた範囲は 1 階が X −1,500〜8,780、2 階が X 10,500〜20,780（間隔 12,000 mm）なので、**階の切り分けは X = 9,000 を境にすれば安全**。
+
+| レイヤー | 内訳 |
+|---|---|
+| 壁 | LINE 72 |
+| 建具 | LINE 37（窓 14×2）/ ARC 9（ドア） |
+| 階段 | LINE 30（踏面 10 + 側線 2 + 矢印 3 の 15 × 2 階分） |
+| 通り芯 | LINE 12 / CIRCLE 24（半径 250、1 階 12・2 階 12）/ TEXT 24 |
+| 文字 | TEXT 13（部屋名と `UP` `DN`） |
+| 図枠 | TEXT 2 |
+
+- **ドアの弧は 1 階 5 個・2 階 4 個**（合計 9）。すべて掃引 90°、半径 = 開口幅。吊元は壁芯上ちょうど
+- **窓は 1 階 6 個・2 階 8 個**（合計 14。建具 LINE 37 = 窓 14 × 2 + ドア 9）。2 階は四周すべてに窓 2 個ずつ入る
+- 窓の細線は法線オフセット `±厚さ/6`（外壁 ±25、内壁 ±20）で帯の半幅の内側にあり、長さは開口幅と厳密に一致する。§7.2 手順 1 の「中央線」判定が効く形になっている
+- **`UP` / `DN` は `階段` レイヤーではなく `文字` レイヤーにある。** 階段認識で「階段レイヤーの文字」を探すと見つからない（§7.2 手順 6 は全レイヤーの文字を見る規定なので問題ない）
+- 通り芯のラベル文字は円の中心から `(−120, −100)` ずれた位置が挿入点。バブルとの対応付けは「円の中心から半径 250 以内に挿入点がある文字」で拾える
+- `sample-house-with-centerline.dxf` は `通り芯`（グリッド）と `壁芯`（各壁の芯線 13 本）を**両方**持つ。壁芯だけを見るならレイヤーで絞る
+- Shift_JIS 版は `$ACADVER = AC1015`、UTF-8 版 2 つは `AC1021`
+- 再実行しても 3 ファイルとも md5 が一致する（生成は決定的）
+
 **Step 6: Commit**
 
 ```bash
@@ -368,6 +400,11 @@ describe('decodeDxfBytes', () => {
   it('UTF-8 版はそのまま読める', () => {
     expect(decodeDxfBytes(load('fixtures/sample-house.dxf'))).toContain('和室');
   });
+  // 宣言より厳密デコードを優先することを守る。この 1 件が無いと、
+  // 宣言を先に見る実装（v0.1.0 の下書き）に戻しても全件通ってしまう
+  it('$DWGCODEPAGE=ANSI_932 が付いた UTF-8 ファイルも文字化けしない', () => {
+    // sample-house.dxf のヘッダに宣言を注入して読ませる
+  });
 });
 
 describe('unitScaleFromHeader', () => {
@@ -389,21 +426,17 @@ Run: `npx vitest run src/dxf/decode.test.ts` → FAIL（モジュールが無い
 
 **Step 3: 実装**
 
+> **この下書きは誤っている。** `$DWGCODEPAGE` を先に見ると、R2007 以降の UTF-8 ファイル（宣言に `ANSI_932` が残る組み合わせは日本語版 CAD で普通に起こる）が文字化けする。2026-09-03 に実機で再現したため、設計書 §7.1 手順 1 ごと下の形に改めた。
+
 ```ts
 /** DXF のバイト列を文字列にする。設計書 §7.1 手順 1 */
 export function decodeDxfBytes(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
-  // ヘッダは ASCII なので latin1 で先頭だけ覗いてコードページを探す
-  const head = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(bytes.length, 65536)));
-  const codepage = /\$DWGCODEPAGE\s*\r?\n\s*3\s*\r?\n\s*(\S+)/i.exec(head)?.[1];
-  if (codepage) {
-    const isSjis = /932|shift|sjis|dos932/i.test(codepage);
-    return new TextDecoder(isSjis ? 'shift_jis' : 'utf-8').decode(bytes);
-  }
   try {
+    // 宣言より厳密デコードの成否を優先する。AC1021 以降は $DWGCODEPAGE が残っていても本文は UTF-8
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   } catch {
-    // Shift_JIS の日本語は UTF-8 として不正なので、ここに落ちる
+    // Shift_JIS の日本語は UTF-8 として不正なバイト列になるので、ここに落ちる
     return new TextDecoder('shift_jis').decode(bytes);
   }
 }
@@ -438,6 +471,22 @@ git commit -m "feat: DXF の文字コード判定と単位推定"
 - Create: `src/dxf/parse.ts` `src/dxf/index.ts`
 - Test: `src/dxf/parse.test.ts`
 
+**先行検証の結果（2026-09-03 に実機で確認済み。推測ではなく実測）**
+
+dxf-parser 1.1.2 に `fixtures/forest-s/平面立面図.dxf` を通した結果、次が確定した。**自前パーサーへの切り替えは不要。**
+
+| 項目 | 実測値 | 実装への影響 |
+|---|---|---|
+| R12（AC1009）の読み込み | 成功。LINE 8,211 / TEXT 171 / CIRCLE 94 / ARC 11 で ezdxf の実測と完全一致 | 代替案は不要 |
+| 弧の角度 | **ラジアン**（`startAngle: 4.712…` = 270°、`endAngle: 0`） | `deg()` による度への変換は**必要**。恒等にしない |
+| 弧の掃引角 | `angleLength` は `end − start` の生値で**負になりうる**（−4.712） | `angleLength` は使わず、`((end − start) mod 360 + 360) mod 360` で求める |
+| `$INSUNITS` | `undefined` | 図面範囲からの推定経路が実際に働く |
+| TEXT の座標・字高 | `startPoint` と `textHeight` | 計画のコードのとおり |
+| ハンドル | 数値で重複あり（0 / 1 / 485…） | 読み込み順の連番を使う（計画どおり） |
+| レイヤー表 | 13 件（ezdxf は 15 件）。各要素に `frozen` `visible` あり | 非表示判定は使える。件数の差は未使用レイヤーなので影響なし |
+
+**注意（つまずきやすい点）:** dxf-parser の ESM エントリ（`dist/index.js`）は相対 import に拡張子が無く、Node 素の ESM 解決では読めない。vitest は Vite の解決器を使うので通るが、もし `ERR_MODULE_NOT_FOUND` が出たら `vitest.config.ts` に `resolve: { alias: { 'dxf-parser': 'dxf-parser/dist/dxf-parser.js' } }`（CJS ビルド）を足して回避する。
+
 **Step 1: 失敗するテスト**
 
 ```ts
@@ -448,14 +497,20 @@ import { loadDxf } from './index';
 const load = (p: string) => loadDxf(new Uint8Array(readFileSync(p)).buffer, p);
 
 describe('loadDxf', () => {
-  it('forest-s: R12 のエンティティ数が ezdxf の実測（LINE 8211 / TEXT 171 / CIRCLE 94 / ARC 11）と一致する', () => {
+  // 2 本に割る理由: 「R12 を取りこぼしていない」ことと「1 mm ルールが効いている」ことは別の性質で、
+  // 1 つの数字に両方を背負わせられない（2026-09-03 の実装で判明）
+  it('forest-s: 生の解析結果が ezdxf の実測（LINE 8211 / TEXT 171 / CIRCLE 94 / ARC 11）と一致する', () => {
+    // 解析だけを行い、正規化前の本数を数える
+  });
+  it('forest-s: 正規化後は LINE が 8125 になる（86 本が 1 mm 未満で捨てられる）', () => {
     const plan = load('fixtures/forest-s/平面立面図.dxf');
     const count = (k: string) => plan.entities.filter((e) => e.kind === k).length;
-    expect(count('line')).toBe(8211);
+    expect(count('line')).toBe(8125);   // 生 8,211 − 1 mm 未満 86（_f-e_254 に 80・_0-3_3 に 6）
     expect(count('text')).toBe(171);
     expect(count('circle')).toBe(94);
     expect(count('arc')).toBe(11);
-    expect(plan.bbox.maxX).toBeCloseTo(58870, -1);
+    // bbox はエンティティの外接矩形。$EXTMAX の 58,870 は用紙の限界であって描画範囲ではない
+    expect(plan.bbox.maxX).toBeCloseTo(58162.5, 0);
   });
   it('forest-s: 弧の角度は度で、玄関ドアの弧が 270→0 になっている', () => {
     const plan = load('fixtures/forest-s/平面立面図.dxf');
@@ -988,7 +1043,16 @@ export const centerlineBBox = (walls: Wall[]): Box2 => bboxOfPoints(walls.flatMa
 export { normalOf, type Seg };
 ```
 
-**Step 4: 通ることを確認** → `npx vitest run src/recognize/walls.test.ts` PASS。`polygon-clipping` の型定義が無ければ `src/types/polygon-clipping.d.ts` に `declare module 'polygon-clipping';` を置く。
+**Step 4: 通ることを確認** → `npx vitest run src/recognize/walls.test.ts` PASS
+
+**polygon-clipping の実測（2026-09-03 に確認済み）**
+
+- 型定義は同梱されている（`dist/polygon-clipping.d.ts` に `declare module "polygon-clipping"`）。**自前の `.d.ts` は不要**
+- **default export は無い。** 上のコードの `import polygonClipping from 'polygon-clipping'` は型検査を通らないので、`import { union } from 'polygon-clipping'` に書き換えて `union(...)` を直接呼ぶ
+- 公開型は `Pair = [number, number]` / `Ring = Pair[]` / `Polygon = Ring[]` / `MultiPolygon = Polygon[]`。`union(geom, ...geoms): MultiPolygon`
+- 矩形 9,100 × 5,915・厚さ 150 の壁帯 4 本を和集合すると、`MultiPolygon` 1 件・外周 5 頂点・**穴 1 個**（内側の空間）が返る。`poly[0]` が外周、`poly[1]` 以降が穴
+- 返る環は**閉じている**（先頭と末尾が同一点）。`outer.slice(0, -1)` で閉じる点を落とすのは正しい
+- 外周の範囲は x −75〜9,175 / y −75〜5,990。壁芯の外接矩形から各辺に厚さの半分だけ外へ出た値になる
 
 **Step 5: Commit** → `git commit -m "feat: 帯から壁・外形・外壁判定を組み立てる"`
 
@@ -1029,7 +1093,8 @@ describe('開口の認識', () => {
     expect(wide?.sill).toBe(0);
     expect(m.openings.some((o) => o.type === 'window' && o.sill === 900)).toBe(true);
     expect(m.openings.filter((o) => o.type === 'door').every((o) => o.head === 2000)).toBe(true);
-    expect(m.openings.filter((o) => o.type === 'door').length).toBe(6);
+    expect(m.openings.filter((o) => o.type === 'door').length).toBe(5);
+    expect(m.openings.filter((o) => o.type === 'window').length).toBe(6);
   });
 });
 ```
@@ -1637,6 +1702,8 @@ export function setRidgeOffset(model: BuildingModel, value: number): BuildingMod
 
 ---
 
+> **Task 10・11 の下書きは「寄棟の既定 inset = W/2 + e」を前提にしているが、これは誤り。** 実装時（2026-09-03）に幾何の矛盾が判明し、設計書 §8.4 を W/2 に訂正した。下書きのテストの `5915 / 2 + 600` は `5915 / 2` が正しい。コミット済みのテストが正。
+
 ### Task 11: `model/roof.ts` 屋根の幾何（設計書 §8.4）
 
 **Files:**
@@ -1746,7 +1813,18 @@ export const roofHeightAt = (g: RoofGeom, x: number, y: number) => g.heightAt(x,
 - Create: `src/geometry/coords.ts` `src/geometry/wallShape.ts` `src/geometry/build.ts`
 - Test: `src/geometry/wallShape.test.ts` `src/geometry/build.test.ts`
 
-設計書 §4.3 の座標変換はここ（`src/geometry/coords.ts`）の 1 か所に置く。ジオメトリはすべて**モデル座標（mm・Z 上）で組み立ててから** `MODEL_TO_SCENE` を 1 回掛ける。設計書の「`src/viewer/coords.ts`」はこのファイルに読み替え、設計書 §4.3 の記述も直す。
+設計書 §4.3 の座標変換はここ（`src/geometry/coords.ts`）の 1 か所に置く。ジオメトリはすべて**モデル座標（mm・Z 上）で組み立ててから** `MODEL_TO_SCENE` を 1 回掛ける。設計書 §4.3 も同じ場所を指している（2026-09-03 に同期済み）。
+
+**先行検証の結果（2026-09-03 に Node で実機確認済み）**
+
+| 確かめたこと | 結果 |
+|---|---|
+| `Shape` + `Path` の穴 2 個を `ExtrudeGeometry` で押し出す | 動く。頂点 144、範囲は x 0〜5,000 / y 0〜3,000 / z 0〜150 で意図どおり。**穴は `new Path(points)` で作る**（`Shape` ではない） |
+| 切り欠き（天端まで抜けた開口を外形に含める） | 動く。頂点 72 |
+| `MODEL_TO_SCENE` 行列 | (9100, 5915, 3350) mm → (9.1, 3.35, −5.915) で設計書 §4.3 のとおり |
+| `ShapeUtils.triangulateShape(contour, holes)` | `[[2,3,0],[0,1,2]]` のように頂点添字の三つ組を返す。屋根の面に使える |
+| `EdgesGeometry(g, 20)` | 動く。穴 2 個の壁で線分 40 本 |
+| `ExtrudeGeometry` の index | **付かない**（`getIndex()` が null）。`mergeGeometries` は index 有無の両方を扱う必要がある |
 
 **Step 1: 失敗するテスト（壁の輪郭）**
 
@@ -2196,6 +2274,8 @@ export function makeLabel(): CSS2DObject & { setText: (t: string) => void } {
 
 **Step 3: 仮の配線で動かして見る**
 
+**`StrictMode` の二重マウントに注意する。** `src/main.tsx` は `StrictMode` で包んであるので、`useEffect` は開発時に 2 回走る。`Viewer` を作る `useEffect` の cleanup で必ず `viewer.dispose()`（`WebGLRenderer.dispose()` と `cancelAnimationFrame`）を呼ぶこと。忘れると WebGL コンテキストが 2 つ生成され、「なぜか重い」「context lost」という原因の分かりにくい形で出る。
+
 `src/ui/App.tsx` に、コンテナ `div` へ `new Viewer(el)` を作り、`store.subscribe` で `viewer.setModel(state.model)` を呼ぶ `useEffect` を書く。`npm run dev` で白い背景と格子が出て、左ドラッグで回転できることを確認する。設計書 A2 の「板」は Task 15 で DXF が読めてから確認する。
 
 **Step 4: Commit** → `git commit -m "feat: three.js シーン・カメラ・ラベルと状態ストア"`
@@ -2610,6 +2690,8 @@ export default defineConfig({
   use: { baseURL: 'http://localhost:5173', viewport: { width: 1280, height: 800 } },
 });
 ```
+
+併せて `vite.config.ts` に `server: { port: 5173, strictPort: true }` を足す。Vite は 5173 が埋まっていると黙って 5174 に移るので、他の開発サーバーが動いていると E2E が別のアプリに繋がる。
 
 `npx playwright install chromium` を 1 回実行する（外部ダウンロード。⚠️ リスク: 中（外部送信なし・実行ファイル取得）。Microsoft 配布の公式バイナリ）。
 

@@ -1,0 +1,83 @@
+import { describe, expect, it } from 'vitest';
+import { recognizePlan } from './index';
+import type { PlanEntity } from '../model/types';
+import { line, planInBox } from './testing';
+
+describe('開口の認識', () => {
+  /**
+   * 弧は 6 個あるが、両側の壁が認識されている（= 隙間になる）のは 2 個（694・706）だけ。残り 4 個は隣の壁片が
+   * 148 / 150 / 252 / 150 mm と短く帯にならない（設計書 §7.2 手順 5 の実測と同じ原因）ので、隙間が無く開口にできない。
+   * 885 の 2 つは弧ではなく建具レイヤーの帯（中央線付きの引き戸と、帯だけの引き戸）が隙間を埋めたもの。
+   * 窓も同じ理由で左外壁の 2 つが落ち、外壁の隙間にある 5 つが取れる（2026-09-03 実測）
+   */
+  it('forest-s 1 階: 開き戸 2＋引き戸 2、窓 5 は外壁だけ、記号線の無い隙間は開口にしない', () => {
+    const m = recognizePlan(planInBox('fixtures/forest-s/平面立面図.dxf', [5500, 28800, 19800, 39800]));
+    const doors = m.openings.filter((o) => o.type === 'door');
+    expect(doors.map((o) => Math.round(o.width)).sort((p, q) => p - q)).toEqual([694, 706, 885, 885]);
+    const wallById = new Map(m.walls.map((w) => [w.id, w]));
+    const windows = m.openings.filter((o) => o.type === 'window');
+    expect(windows).toHaveLength(5);
+    expect(windows.every((o) => wallById.get(o.wallId)?.exterior)).toBe(true);
+    // 開き戸は戸が付いている壁にだけ付く。壁の交差部で直交する壁の隙間に同じ弧を数えない（w10 と w30 の角）
+    expect(m.openings.filter((o) => Math.round(o.width) === 694)).toHaveLength(1);
+  });
+  it('自作 1 階: 掃き出し窓（幅 1,820）は sill 0、腰窓は sill 900、ドアは head 2,000', () => {
+    const m = recognizePlan(planInBox('fixtures/sample-house.dxf', [-2000, -2000, 9500, 9500]));
+    const wide = m.openings.find((o) => o.type === 'window' && Math.abs(o.width - 1820) < 60);
+    expect(wide?.sill).toBe(0);
+    expect(m.openings.some((o) => o.type === 'window' && o.sill === 900)).toBe(true);
+    expect(m.openings.filter((o) => o.type === 'door').every((o) => o.head === 2000)).toBe(true);
+    expect(m.openings.filter((o) => o.type === 'door').length).toBe(5);
+    expect(m.openings.filter((o) => o.type === 'window').length).toBe(6);
+  });
+  it('自作 2 階: ドア 4・窓 8', () => {
+    const m = recognizePlan(planInBox('fixtures/sample-house.dxf', [10000, -2000, 21500, 9500]));
+    expect(m.openings.filter((o) => o.type === 'door').length).toBe(4);
+    expect(m.openings.filter((o) => o.type === 'window').length).toBe(8);
+  });
+  it('開口の wallId は必ず存在する壁を指し、offset + width は壁の長さに収まる', () => {
+    const m = recognizePlan(planInBox('fixtures/sample-house.dxf', [-2000, -2000, 9500, 9500]));
+    const wallById = new Map(m.walls.map((w) => [w.id, w]));
+    for (const o of m.openings) {
+      const w = wallById.get(o.wallId)!;
+      expect(w).toBeDefined();
+      expect(o.offset).toBeGreaterThanOrEqual(0);
+      expect(o.offset + o.width).toBeLessThanOrEqual(Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) + 1);
+    }
+  });
+});
+
+/** 壁芯 y = 0・厚さ 150 の壁を [x0, x1] に描く（二重線）。単独の壁は外形（全壁の bbox）の縁に乗るので外壁になる */
+const wall = (x0: number, x1: number): PlanEntity[] => [line('壁', x0, 75, x1, 75), line('壁', x0, -75, x1, -75)];
+
+describe('開口の認識（合成データ）', () => {
+  it('壁芯版の自作 1 階でも開口の数は同じ（壁を貫く壁芯の線を記号に数えない）', () => {
+    const m = recognizePlan(planInBox('fixtures/sample-house-with-centerline.dxf', [-2000, -2000, 9500, 9500]));
+    expect(m.openings.filter((o) => o.type === 'door').length).toBe(5);
+    expect(m.openings.filter((o) => o.type === 'window').length).toBe(6);
+  });
+  it('記号の無い隙間は開口なしの欠き: 壁は分かれたまま、開口は 0。通り芯が貫いていても同じ', () => {
+    const plain = recognizePlan({ entities: [...wall(0, 3000), ...wall(3900, 7000)], bbox: { minX: 0, minY: -75, maxX: 7000, maxY: 75 }, sourceName: 't' });
+    expect(plain.walls).toHaveLength(2);
+    expect(plain.openings).toHaveLength(0);
+    const withAxis = recognizePlan({ entities: [...wall(0, 3000), ...wall(3900, 7000), line('通り芯', -1000, 0, 8000, 0)], bbox: { minX: -1000, minY: -75, maxX: 8000, maxY: 75 }, sourceName: 't' });
+    expect(withAxis.walls).toHaveLength(2);
+    expect(withAxis.openings).toHaveLength(0);
+  });
+  it('幅 300 mm 未満の隙間は記号があっても開口にせず、壁をつないで埋める', () => {
+    const m = recognizePlan({ entities: [...wall(0, 3000), ...wall(3200, 7000), line('建具', 3000, 30, 3200, 30)], bbox: { minX: 0, minY: -75, maxX: 7000, maxY: 75 }, sourceName: 't' });
+    expect(m.walls).toHaveLength(1);
+    expect(m.walls[0]).toMatchObject({ a: { x: 0, y: 0 }, b: { x: 7000, y: 0 } });
+    expect(m.openings).toHaveLength(0);
+  });
+  it('隙間の始点から右へ 5,000 mm 伸びる建具レイヤーの線は隙間に収まらないので記号に数えない', () => {
+    const m = recognizePlan({ entities: [...wall(0, 3000), ...wall(3900, 7000), line('建具', 3000, 30, 8000, 30)], bbox: { minX: 0, minY: -75, maxX: 8000, maxY: 75 }, sourceName: 't' });
+    expect(m.walls).toHaveLength(2);
+    expect(m.openings).toHaveLength(0);
+  });
+  it('隙間に収まる記号線があれば開口になり、壁は 1 本につながる（外壁なので幅 900 の腰窓）', () => {
+    const m = recognizePlan({ entities: [...wall(0, 3000), ...wall(3900, 7000), line('建具', 3000, 30, 3900, 30)], bbox: { minX: 0, minY: -75, maxX: 7000, maxY: 75 }, sourceName: 't' });
+    expect(m.walls).toHaveLength(1);
+    expect(m.openings).toEqual([{ wallId: m.walls[0].id, offset: 3000, width: 900, type: 'window', sill: 900, head: 2000 }]);
+  });
+});

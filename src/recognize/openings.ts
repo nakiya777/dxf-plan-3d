@@ -133,14 +133,18 @@ export function detectOpenings(
           const hi = Math.min(gapEnd, doubleLeaf ? sHinge + door.radius : Math.max(sHinge, sLeaf));
           opening = { offset: lo - cur.s0, width: hi - lo, type: 'door', ...OC.door };
         } else {
-          // 記号が隙間を「埋めている」= 壁と平行で、隙間の一定以上の長さを覆っている。
-          // 壁端の枠の刻み（建具レイヤーの短い線）は隙間の縁に触れるだけなので数えない
-          const covers = (s0: number, s1: number) => Math.min(s1, gapEnd) - Math.max(s0, gapStart) >= OC.symbolMinCover * gap;
+          // 記号が隙間を「埋めている」= 壁と平行で、隙間の一定以上の長さを覆い、隙間の外にはみ出さない。
+          // 壁端の枠の刻み（建具レイヤーの短い線）は隙間の縁に触れるだけなので数えず、
+          // 通り芯・壁芯のように壁全体を貫く線は隙間に収まらないので数えない
+          const fills = (s0: number, s1: number) =>
+            Math.min(s1, gapEnd) - Math.max(s0, gapStart) >= OC.symbolMinCover * gap &&
+            s0 >= gapStart - OC.symbolOverhang &&
+            s1 <= gapEnd + OC.symbolOverhang;
           const bandFills = symbols.some(
-            (b) => b.theta === chain.theta && Math.abs((b.rhoLo + b.rhoHi) / 2 - chain.rho) <= thickness && covers(b.s0, b.s1),
+            (b) => b.theta === chain.theta && Math.abs((b.rhoLo + b.rhoHi) / 2 - chain.rho) <= thickness && fills(b.s0, b.s1),
           );
           const lineFills = symbolSegs.some(
-            (s) => s.theta === chain.theta && Math.abs(s.rho - chain.rho) <= thickness / 2 + OC.symbolAcross && covers(s.s0, s.s1),
+            (s) => s.theta === chain.theta && Math.abs(s.rho - chain.rho) <= thickness / 2 + OC.symbolAcross && fills(s.s0, s.s1),
           );
           if (bandFills || lineFills) {
             opening = exterior

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { recognizePlan } from './index';
-import { planInBox } from './testing';
+import type { PlanEntity } from '../model/types';
+import { line, planInBox } from './testing';
 
 describe('開口の認識', () => {
   /**
@@ -42,5 +43,29 @@ describe('開口の認識', () => {
       expect(o.offset).toBeGreaterThanOrEqual(0);
       expect(o.offset + o.width).toBeLessThanOrEqual(Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) + 1);
     }
+  });
+});
+
+/** 壁芯 y = 0・厚さ 150 の壁を [x0, x1] に描く（二重線）。単独の壁は外形（全壁の bbox）の縁に乗るので外壁になる */
+const wall = (x0: number, x1: number): PlanEntity[] => [line('壁', x0, 75, x1, 75), line('壁', x0, -75, x1, -75)];
+
+describe('開口の認識（合成データ）', () => {
+  it('壁芯版の自作 1 階でも開口の数は同じ（壁を貫く壁芯の線を記号に数えない）', () => {
+    const m = recognizePlan(planInBox('fixtures/sample-house-with-centerline.dxf', [-2000, -2000, 9500, 9500]));
+    expect(m.openings.filter((o) => o.type === 'door').length).toBe(5);
+    expect(m.openings.filter((o) => o.type === 'window').length).toBe(6);
+  });
+  it('記号の無い隙間は開口なしの欠き: 壁は分かれたまま、開口は 0。通り芯が貫いていても同じ', () => {
+    const plain = recognizePlan({ entities: [...wall(0, 3000), ...wall(3900, 7000)], bbox: { minX: 0, minY: -75, maxX: 7000, maxY: 75 }, sourceName: 't' });
+    expect(plain.walls).toHaveLength(2);
+    expect(plain.openings).toHaveLength(0);
+    const withAxis = recognizePlan({ entities: [...wall(0, 3000), ...wall(3900, 7000), line('通り芯', -1000, 0, 8000, 0)], bbox: { minX: -1000, minY: -75, maxX: 8000, maxY: 75 }, sourceName: 't' });
+    expect(withAxis.walls).toHaveLength(2);
+    expect(withAxis.openings).toHaveLength(0);
+  });
+  it('隙間に収まる記号線があれば開口になり、壁は 1 本につながる（外壁なので幅 900 の腰窓）', () => {
+    const m = recognizePlan({ entities: [...wall(0, 3000), ...wall(3900, 7000), line('建具', 3000, 30, 3900, 30)], bbox: { minX: 0, minY: -75, maxX: 7000, maxY: 75 }, sourceName: 't' });
+    expect(m.walls).toHaveLength(1);
+    expect(m.openings).toEqual([{ wallId: m.walls[0].id, offset: 3000, width: 900, type: 'window', sill: 900, head: 2000 }]);
   });
 });

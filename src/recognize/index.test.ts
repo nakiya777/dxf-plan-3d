@@ -1,8 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadDxf } from '../dxf';
+import type { PlanEntity } from '../model/types';
 import { recognizePlan } from './index';
+import { detectAxes } from './axes';
 import { selectRegion } from './region';
+import { line } from './testing';
 
 const sample = () => loadDxf(new Uint8Array(readFileSync('fixtures/sample-house.dxf')).buffer, 'sample');
 
@@ -47,5 +50,19 @@ describe('recognizePlan（壁が無い図面）', () => {
     expect(m.outline).toHaveLength(0);
     expect(m.warnings).toHaveLength(1);
     expect(m.warnings[0]).toContain('壁を認識できません');
+  });
+});
+
+describe('detectAxes', () => {
+  const circle = (x: number, y: number, r = 250): PlanEntity => ({ kind: 'circle', layer: '通り芯', center: { x, y }, radius: r });
+  const text = (x: number, y: number, t: string): PlanEntity => ({ kind: 'text', layer: '通り芯', at: { x, y }, text: t, height: 200 });
+  it('円周に端点が乗る線（ずれ 5 mm まで）があれば通り芯。乗っていなければ拾わない', () => {
+    const on = [circle(0, -1250), text(-120, -1350, 'X1'), line('通り芯', 0, -1004, 0, 8000)];
+    expect(detectAxes(on).map((a) => a.label)).toEqual(['X1']);
+    const off = [circle(0, -1250), text(-120, -1350, 'X1'), line('通り芯', 0, -900, 0, 8000)];
+    expect(detectAxes(off)).toHaveLength(0);
+  });
+  it('寸法線端末の小円（半径 5）は通り芯にしない', () => {
+    expect(detectAxes([circle(0, 0, 5), text(0, 0, 'A'), line('寸法', 0, -5, 0, 500)])).toHaveLength(0);
   });
 });

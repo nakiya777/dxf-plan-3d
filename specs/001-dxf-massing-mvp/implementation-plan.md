@@ -438,6 +438,22 @@ git commit -m "feat: DXF の文字コード判定と単位推定"
 - Create: `src/dxf/parse.ts` `src/dxf/index.ts`
 - Test: `src/dxf/parse.test.ts`
 
+**先行検証の結果（2026-09-03 に実機で確認済み。推測ではなく実測）**
+
+dxf-parser 1.1.2 に `fixtures/forest-s/平面立面図.dxf` を通した結果、次が確定した。**自前パーサーへの切り替えは不要。**
+
+| 項目 | 実測値 | 実装への影響 |
+|---|---|---|
+| R12（AC1009）の読み込み | 成功。LINE 8,211 / TEXT 171 / CIRCLE 94 / ARC 11 で ezdxf の実測と完全一致 | 代替案は不要 |
+| 弧の角度 | **ラジアン**（`startAngle: 4.712…` = 270°、`endAngle: 0`） | `deg()` による度への変換は**必要**。恒等にしない |
+| 弧の掃引角 | `angleLength` は `end − start` の生値で**負になりうる**（−4.712） | `angleLength` は使わず、`((end − start) mod 360 + 360) mod 360` で求める |
+| `$INSUNITS` | `undefined` | 図面範囲からの推定経路が実際に働く |
+| TEXT の座標・字高 | `startPoint` と `textHeight` | 計画のコードのとおり |
+| ハンドル | 数値で重複あり（0 / 1 / 485…） | 読み込み順の連番を使う（計画どおり） |
+| レイヤー表 | 13 件（ezdxf は 15 件）。各要素に `frozen` `visible` あり | 非表示判定は使える。件数の差は未使用レイヤーなので影響なし |
+
+**注意（つまずきやすい点）:** dxf-parser の ESM エントリ（`dist/index.js`）は相対 import に拡張子が無く、Node 素の ESM 解決では読めない。vitest は Vite の解決器を使うので通るが、もし `ERR_MODULE_NOT_FOUND` が出たら `vitest.config.ts` に `resolve: { alias: { 'dxf-parser': 'dxf-parser/dist/dxf-parser.js' } }`（CJS ビルド）を足して回避する。
+
 **Step 1: 失敗するテスト**
 
 ```ts

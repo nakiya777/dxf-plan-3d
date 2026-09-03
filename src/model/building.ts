@@ -45,30 +45,45 @@ const isXAxis = (axis: Segment) => Math.abs(axis.a.x - axis.b.x) < Math.abs(axis
 const exteriorSegments = (walls: Wall[], offset: Vec2): Segment[] =>
   walls.filter((w) => w.exterior).map((w) => ({ a: { x: w.a.x + offset.x, y: w.a.y + offset.y }, b: { x: w.b.x + offset.x, y: w.b.y + offset.y } }));
 
+/** その軸に直交する（軸の座標が一定の）壁 */
+const perpendicularTo = (axis: 'x' | 'y') => (s: Segment) => Math.abs(s.a[axis] - s.b[axis]) < 1;
+
+/** 2 本の壁の重なり長。同じ向きで位置が揃っている（許容 20 mm）ときだけ、伸びる方向の共有区間を返す */
+function overlapLength(l: Segment, u: Segment, shiftBy: Vec2): number {
+  for (const axis of ['x', 'y'] as const) {
+    if (!perpendicularTo(axis)(l) || !perpendicularTo(axis)(u)) continue;
+    if (Math.abs(l.a[axis] - (u.a[axis] + shiftBy[axis])) > OVERLAY_TOLERANCE) return 0;
+    const other = axis === 'x' ? 'y' : 'x';
+    const uMin = Math.min(u.a[other], u.b[other]) + shiftBy[other];
+    const uMax = Math.max(u.a[other], u.b[other]) + shiftBy[other];
+    return Math.max(0, Math.min(Math.max(l.a[other], l.b[other]), uMax) - Math.max(Math.min(l.a[other], l.b[other]), uMin));
+  }
+  return 0;
+}
+
 /**
- * 外壁の重ね合わせ（§8.5 手順 2）で 1 軸ぶんの平行移動を決める。
- * `axis` に直交する外壁（その軸の座標が一定の壁）どうしの組み合わせと外接矩形の中心合わせを候補にし、
- * 候補ごとに位置が揃った壁の重なり長を合計して最大のものを選ぶ。同点なら候補の先頭（中心合わせ）
+ * 外壁の重ね合わせ（§8.5 手順 2）。候補の組 (dx, dy) を総当たりで採点し、重なり長の合計が最大の組を返す。
+ * 各軸の候補は「外接矩形の中心合わせ」＋「その軸に直交する外壁どうしの位置差」。通り芯で決まった軸は `fixed` の値 1 つに固定する。
+ * 重なり長を (dx, dy) 適用後の座標で測るので、両階の描画位置が離れていても採点がずれない。
+ * 同点（矩形どうしでは西壁を東壁に重ねても同じ重なり長になる）は中心合わせに近い組を取る [推定]
  */
-function overlayAlong(axis: 'x' | 'y', lower: Segment[], upper: Segment[], lowerRect: Box2, upperRect: Box2): number {
-  const other = axis === 'x' ? 'y' : 'x';
-  const perpendicular = (s: Segment) => Math.abs(s.a[axis] - s.b[axis]) < 1;
-  const lowerWalls = lower.filter(perpendicular);
-  const upperWalls = upper.filter(perpendicular);
-  const centered = center(lowerRect)[axis] - center(upperRect)[axis];
-  const candidates = new Set<number>([centered]);
-  for (const l of lowerWalls) for (const u of upperWalls) candidates.add(l.a[axis] - u.a[axis]);
-  const overlap = (l: Segment, u: Segment) =>
-    Math.max(0, Math.min(Math.max(l.a[other], l.b[other]), Math.max(u.a[other], u.b[other])) - Math.max(Math.min(l.a[other], l.b[other]), Math.min(u.a[other], u.b[other])));
-  // 同点（矩形どうしでは西壁を東壁に重ねても同じ重なり長になる）は中心合わせに近い候補を取る [推定]
-  let best = centered;
+function overlayFloors(lower: Segment[], upper: Segment[], lowerRect: Box2, upperRect: Box2, fixed: Partial<Vec2>): Vec2 {
+  const centered: Vec2 = { x: center(lowerRect).x - center(upperRect).x, y: center(lowerRect).y - center(upperRect).y };
+  const candidatesAlong = (axis: 'x' | 'y'): number[] => {
+    const fixedValue = fixed[axis];
+    if (fixedValue !== undefined) return [fixedValue];
+    const set = new Set<number>([centered[axis]]);
+    for (const l of lower.filter(perpendicularTo(axis))) for (const u of upper.filter(perpendicularTo(axis))) set.add(l.a[axis] - u.a[axis]);
+    return [...set];
+  };
+  const distance = (d: Vec2) => Math.hypot(d.x - centered.x, d.y - centered.y);
+  let best: Vec2 = { x: fixed.x ?? centered.x, y: fixed.y ?? centered.y };
   let bestScore = -1;
-  for (const d of candidates) {
+  for (const dx of candidatesAlong('x')) for (const dy of candidatesAlong('y')) {
+    const d = { x: dx, y: dy };
     let score = 0;
-    for (const l of lowerWalls) for (const u of upperWalls) {
-      if (Math.abs(l.a[axis] - (u.a[axis] + d)) <= OVERLAY_TOLERANCE) score += overlap(l, u);
-    }
-    if (score > bestScore || (score === bestScore && Math.abs(d - centered) < Math.abs(best - centered))) { bestScore = score; best = d; }
+    for (const l of lower) for (const u of upper) score += overlapLength(l, u, d);
+    if (score > bestScore || (score === bestScore && distance(d) < distance(best))) { bestScore = score; best = d; }
   }
   return best;
 }
@@ -76,7 +91,7 @@ function overlayAlong(axis: 'x' | 'y', lower: Segment[], upper: Segment[], lower
 /**
  * 2 階目以降の位置合わせ（§8.5）。新しい階の平面図座標 → 建物座標の平行移動を返す。
  * 1. 両階に同じラベルの通り芯があれば、X 方向・Y 方向それぞれ最初に見つかった芯を重ねる
- * 2. 無い方向は外壁の重ね合わせで決める（候補には外接矩形の中心合わせも含む）
+ * 2. 残りは外壁の重ね合わせで決める（片軸だけ通り芯で決まったときは、その軸を固定して重ね合わせる）
  */
 export function alignToBelow(below: FloorBlock, plan: PlanModel): Vec2 {
   let dx: number | undefined;
@@ -92,10 +107,7 @@ export function alignToBelow(below: FloorBlock, plan: PlanModel): Vec2 {
   const upper = exteriorSegments(plan.walls, { x: 0, y: 0 });
   const lowerRect = shift(centerlineRect(below.plan), below.offset);
   const upperRect = centerlineRect(plan);
-  return {
-    x: dx ?? overlayAlong('x', lower, upper, lowerRect, upperRect),
-    y: dy ?? overlayAlong('y', lower, upper, lowerRect, upperRect),
-  };
+  return overlayFloors(lower, upper, lowerRect, upperRect, { x: dx, y: dy });
 }
 
 /** 次の階の id。既存 id の最大番号 + 1 なので、モジュール状態を持たずテスト間で漏れない */

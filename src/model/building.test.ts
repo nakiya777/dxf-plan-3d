@@ -111,9 +111,45 @@ describe('alignToBelow', () => {
   });
   it('2 階が小さいときは外壁芯の重なりが最大になる位置（中心合わせではない）', () => {
     const m = addFloor(createBuilding(), plan(0, 0, false));
-    // 1 階の南・西の外壁に揃う 6,000 × 4,000 の 2 階。東・北の外壁は短いので、南・西で重ねた方が重なり長が大きい
+    // 1 階の南・西の外壁に揃う 6,000 × 4,000 の 2 階。西壁を 1 階の西壁に重ねても東壁に重ねても西壁の重なり長は同じ
+    // （矩形どうしの宿命）なので、答えは同点の中心寄せで決まる。東・北の外壁を短くしてあるのは他の組が勝たないようにするため
     const small: PlanModel = { ...plan(0, 0, false), walls: [wall('a', 0, 0, 6000, 0), wall('b', 6000, 0, 6000, 2000), wall('c', 3000, 4000, 0, 4000), wall('d', 0, 4000, 0, 0)] };
     expect(alignToBelow(m.floors[0], small)).toEqual({ x: -4550, y: -2957.5 });
+  });
+  it('2 階の描画位置が離れていても、重なり長は位置合わせ後の座標で測る', () => {
+    const m = addFloor(createBuilding(), plan(0, 0, false));
+    // 上のテストと同じ形（東・北の外壁が短い）を (ox, oy) にずらして描いたもの。南・西の外壁を 1 階に重ねる位置が正解。
+    // 単純な矩形だと西壁を 1 階の西壁に重ねても東壁に重ねても重なり長が同じで答えが 2 つあるため、非対称な形で試す
+    const small = (ox: number, oy: number): PlanModel => ({
+      ...plan(0, 0, false),
+      walls: [wall('a', ox, oy, ox + 6000, oy), wall('b', ox + 6000, oy, ox + 6000, oy + 2000), wall('c', ox + 3000, oy + 4000, ox, oy + 4000), wall('d', ox, oy + 4000, ox, oy)],
+    });
+    expect(alignToBelow(m.floors[0], small(0, 3000))).toEqual({ x: -4550, y: -5957.5 });
+    expect(alignToBelow(m.floors[0], small(20000, 20000))).toEqual({ x: -24550, y: -22957.5 });
+    expect(alignToBelow(m.floors[0], small(-20000, -20000))).toEqual({ x: 15450, y: 17042.5 });
+  });
+  it('通り芯で決まった軸は、外壁の重なりが大きい別の位置があっても覆らない', () => {
+    const m = addFloor(createBuilding(), plan());
+    // 2 階の X1 だけ壁より 1,000 東にずれている図面。壁を重ねるなら x = −24,550 だが、通り芯が優先される
+    const upper = plan(20000, 300);
+    upper.axes = [{ label: 'X1', a: { x: 21000, y: -200 }, b: { x: 21000, y: 6800 }, bubble: { x: 21000, y: -500 } }];
+    expect(alignToBelow(m.floors[0], upper)).toEqual({ x: -25550, y: -2957.5 - 300 });
+  });
+  it('重なり長が同点なら中心合わせに近い組を取る [推定]', () => {
+    // 1 階の外接矩形を西の短い外壁で −3,000 まで広げる（中心は x = 3,050 → 建物座標で西壁 −3,050、東壁 6,050）
+    const lower: PlanModel = { ...plan(0, 0, false), walls: [...plan(0, 0, false).walls, wall('stub', -3000, 0, -3000, 100)] };
+    const m = addFloor(createBuilding(), lower);
+    expect(m.floors[0].offset.x).toBe(-3050);
+    // 6,000 × 4,000 の 2 階は西壁合わせ（x = −3,050）と東壁合わせ（x = 50）が同点。中心合わせ x = −3,000 に近い西壁合わせを取る
+    const upper: PlanModel = { ...plan(0, 0, false), walls: [wall('a', 0, 0, 6000, 0), wall('b', 6000, 0, 6000, 4000), wall('c', 6000, 4000, 0, 4000), wall('d', 0, 4000, 0, 0)] };
+    expect(alignToBelow(m.floors[0], upper).x).toBe(-3050);
+  });
+  it('20 mm 以内のずれは同じ位置とみなして重なり長に数える', () => {
+    // 1 階は x = 6,000 にも外壁がある。2 階の東壁は 6,010 で 10 mm ずれているが、西壁合わせ（x = −4,550）で東壁も数えられる
+    const lower: PlanModel = { ...plan(0, 0, false), walls: [...plan(0, 0, false).walls, wall('step', 6000, 0, 6000, 5915)] };
+    const m = addFloor(createBuilding(), lower);
+    const upper: PlanModel = { ...plan(0, 0, false), walls: [wall('a', 0, 0, 6010, 0), wall('b', 6010, 0, 6010, 4000), wall('c', 3000, 4000, 0, 4000), wall('d', 0, 4000, 0, 2000)] };
+    expect(alignToBelow(m.floors[0], upper)).toEqual({ x: -4550, y: -2957.5 });
   });
   it('addFloor は 2 階目を直下に位置合わせする', () => {
     const m = addFloor(addFloor(createBuilding(), plan()), plan(20000, 300));

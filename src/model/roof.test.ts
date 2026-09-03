@@ -95,5 +95,10 @@ describe('solveRoof 軸と棟の平行移動', () => {
     expect(roofHeightAt(g, -5150, -3557.5)).toBeCloseTo(lowEave);
     expect(roofHeightAt(g, -5150, 3557.5)).toBeCloseTo(lowEave);
     for (const poly of g.planes) for (const p of poly) expect(p.z).toBeCloseTo(roofHeightAt(g, p.x, p.y));
+    // 符号を反転しても低い方（今度は y 大の側）に合わせる
+    const h = solveRoof({ ...base, ridgeOffset: -500 }, rect, He);
+    expect(roofHeightAt(h, -5150, 3557.5)).toBeCloseTo(lowEave);
+    expect(roofHeightAt(h, -5150, -3557.5)).toBeCloseTo(lowEave);
+    expect(roofHeightAt(h, 0, -2957.5)).toBeCloseTo(He + 0.4 * 1000);
   });
 });

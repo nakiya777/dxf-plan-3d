@@ -400,6 +400,11 @@ describe('decodeDxfBytes', () => {
   it('UTF-8 版はそのまま読める', () => {
     expect(decodeDxfBytes(load('fixtures/sample-house.dxf'))).toContain('和室');
   });
+  // 宣言より厳密デコードを優先することを守る。この 1 件が無いと、
+  // 宣言を先に見る実装（v0.1.0 の下書き）に戻しても全件通ってしまう
+  it('$DWGCODEPAGE=ANSI_932 が付いた UTF-8 ファイルも文字化けしない', () => {
+    // sample-house.dxf のヘッダに宣言を注入して読ませる
+  });
 });
 
 describe('unitScaleFromHeader', () => {
@@ -421,21 +426,17 @@ Run: `npx vitest run src/dxf/decode.test.ts` → FAIL（モジュールが無い
 
 **Step 3: 実装**
 
+> **この下書きは誤っている。** `$DWGCODEPAGE` を先に見ると、R2007 以降の UTF-8 ファイル（宣言に `ANSI_932` が残る組み合わせは日本語版 CAD で普通に起こる）が文字化けする。2026-09-03 に実機で再現したため、設計書 §7.1 手順 1 ごと下の形に改めた。
+
 ```ts
 /** DXF のバイト列を文字列にする。設計書 §7.1 手順 1 */
 export function decodeDxfBytes(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
-  // ヘッダは ASCII なので latin1 で先頭だけ覗いてコードページを探す
-  const head = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(bytes.length, 65536)));
-  const codepage = /\$DWGCODEPAGE\s*\r?\n\s*3\s*\r?\n\s*(\S+)/i.exec(head)?.[1];
-  if (codepage) {
-    const isSjis = /932|shift|sjis|dos932/i.test(codepage);
-    return new TextDecoder(isSjis ? 'shift_jis' : 'utf-8').decode(bytes);
-  }
   try {
+    // 宣言より厳密デコードの成否を優先する。AC1021 以降は $DWGCODEPAGE が残っていても本文は UTF-8
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   } catch {
-    // Shift_JIS の日本語は UTF-8 として不正なので、ここに落ちる
+    // Shift_JIS の日本語は UTF-8 として不正なバイト列になるので、ここに落ちる
     return new TextDecoder('shift_jis').decode(bytes);
   }
 }

@@ -70,6 +70,11 @@ describe('開口の認識（合成データ）', () => {
     expect(m.walls[0]).toMatchObject({ a: { x: 0, y: 0 }, b: { x: 7000, y: 0 } });
     expect(m.openings).toHaveLength(0);
   });
+  it('隙間の始点から右へ 5,000 mm 伸びる建具レイヤーの線は隙間に収まらないので記号に数えない', () => {
+    const m = recognizePlan({ entities: [...wall(0, 3000), ...wall(3900, 7000), line('建具', 3000, 30, 8000, 30)], bbox: { minX: 0, minY: -75, maxX: 8000, maxY: 75 }, sourceName: 't' });
+    expect(m.walls).toHaveLength(2);
+    expect(m.openings).toHaveLength(0);
+  });
   it('隙間に収まる記号線があれば開口になり、壁は 1 本につながる（外壁なので幅 900 の腰窓）', () => {
     const m = recognizePlan({ entities: [...wall(0, 3000), ...wall(3900, 7000), line('建具', 3000, 30, 3900, 30)], bbox: { minX: 0, minY: -75, maxX: 7000, maxY: 75 }, sourceName: 't' });
     expect(m.walls).toHaveLength(1);

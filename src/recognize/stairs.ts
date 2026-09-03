@@ -52,6 +52,7 @@ export function findRuns(segs: Seg[]): Run[] {
         if (used.has(cand) || d < CFG.numeric.duplicateRho || overlapLen(cand, prev) < overlapRatio * Math.min(length(cand), length(prev))) continue;
         const lenOk = Math.abs(length(cand) - length(prev)) <= lengthTol * Math.max(length(cand), length(prev));
         const pitchOk = d >= minPitch && (pitch === 0 || Math.abs(d - pitch) <= pitchTol * pitch);
+        // 等間隔が崩れたら組は終わり（`d < minPitch` も含む）。崩れた線を跨いで先を拾うと、目地の列を階段に数える
         if (!(lenOk && pitchOk)) break;
         pitch = d;
         run.push(cand);
@@ -83,14 +84,16 @@ interface Arrow {
 }
 
 /**
- * 矢印: 軸線の端に短い線が 2 本付いたもの。軸線の中点が `within` にあるものを探す
+ * 矢印: 軸線の端に短い線が 2 本付いたもの。軸線の中点が `within` にあるものを探す。
+ * 軸線は踏面（向き `treadTheta`）と平行でない線に限る。踏面の端に手すりの切れ端などの短線 2 本が
+ * 触れると踏面自身が矢印になり、文字より優先されて向きが反転するため
  */
-function findArrow(segs: Seg[], within: Box2): Arrow | null {
+function findArrow(segs: Seg[], within: Box2, treadTheta: number): Arrow | null {
   const { arrowHeadMax, arrowShaftMin, arrowJoinTol } = CFG.stair;
   const heads = segs.filter((s) => length(s) <= arrowHeadMax);
   const near = (p: Vec2, q: Vec2) => Math.hypot(p.x - q.x, p.y - q.y) <= arrowJoinTol;
   for (const shaft of segs) {
-    if (length(shaft) < arrowShaftMin || !inBox(midOf(shaft), within)) continue;
+    if (shaft.theta === treadTheta || length(shaft) < arrowShaftMin || !inBox(midOf(shaft), within)) continue;
     for (const [tip, tail] of [
       [shaft.a, shaft.b],
       [shaft.b, shaft.a],
@@ -131,18 +134,22 @@ function spanBetween(lo1: number, hi1: number, lo2: number, hi2: number): [numbe
   return gapLo < gapHi ? [gapLo, gapHi] : [Math.min(lo1, lo2), Math.max(hi1, hi2)];
 }
 
-/** 2 つの矩形の間の空き（踊り場）。x・y それぞれ `spanBetween` で決める */
+/**
+ * 2 つの矩形の間の空き（踊り場）。x・y それぞれ `spanBetween` で決める。
+ * 両軸で重なれば（離れている軸が無ければ）2 つの和になり、踊り場が flight を覆う。§8.3 は踊り場を flight の上に描くので実害は無い
+ */
 function gapBox(a: Box2, b: Box2): Box2 {
   const [minX, maxX] = spanBetween(a.minX, a.maxX, b.minX, b.maxX);
   const [minY, maxY] = spanBetween(a.minY, a.maxY, b.minY, b.maxY);
   return { minX, minY, maxX, maxY };
 }
 
-/** 認識した組と、向きの根拠（矢印・文字） */
+/** 認識した組と、向きの根拠（矢印・文字）。`down` は文字が DN（矢印が下る向きに描かれている） */
 interface Found {
   flight: Flight;
   arrow: Arrow | null;
   label: Text | null;
+  down: boolean;
 }
 
 /**
@@ -155,7 +162,7 @@ interface Found {
  *
  * 1,500 mm 以内にある組は 1 つの階段にまとめ、組と組の間の空きを踊り場にする（折り返し階段）。
  * 回り段の扇形の踏面は等間隔の平行線にならないので組に入らず、踊り場側の空きとして残る。
- * `flights` は上り順: 先頭は矢印の尾（無ければ `UP` 文字。`DN` 文字だけなら最も遠い組）に最も近い組、
+ * `flights` は上り順: 先頭は上りの起点（`UP` の矢印なら尾、`DN` の矢印なら矢先。無ければ `UP` 文字。`DN` 文字だけなら最も遠い組）に最も近い組、
  * 以降は直前の組の上り終端に最も近い組
  */
 export function detectStairs(nonWallSegs: Seg[], texts: Text[]): Stair[] {
@@ -168,7 +175,7 @@ export function detectStairs(nonWallSegs: Seg[], texts: Text[]): Stair[] {
       texts
         .filter((t) => /^(UP|DN|上|下)/i.test(t.text.trim()) && inBox(t.at, expand(run.bbox, textDistance)))
         .sort((p, q) => pointBoxDistance(p.at, run.bbox) - pointBoxDistance(q.at, run.bbox))[0] ?? null;
-    const arrow = findArrow(nonWallSegs, expand(run.bbox, arrowDistance));
+    const arrow = findArrow(nonWallSegs, expand(run.bbox, arrowDistance), run.theta);
     if (!label && !arrow) continue;
     // 踏面線が水平（θ = 0）なら Y 方向に上る。斜めなら法線の向きが大きい軸
     const axis: 'x' | 'y' = Math.abs(Math.sin((run.theta * Math.PI) / 180)) > Math.SQRT1_2 ? 'x' : 'y';
@@ -185,7 +192,7 @@ export function detectStairs(nonWallSegs: Seg[], texts: Text[]): Stair[] {
       const labelAtLow = c - lo < hi - c;
       ascendPositive = isDown ? !labelAtLow : labelAtLow;
     }
-    found.push({ flight: { rect: run.bbox, axis, ascendPositive, treads: run.segs.length - 1 }, arrow, label });
+    found.push({ flight: { rect: run.bbox, axis, ascendPositive, treads: run.segs.length - 1 }, arrow, label, down: isDown });
   }
 
   const stairs: Stair[] = [];
@@ -212,14 +219,15 @@ export function detectStairs(nonWallSegs: Seg[], texts: Text[]): Stair[] {
 }
 
 /**
- * 組を上り順に並べる。起点は矢印の尾、無ければ UP の文字（起点に最も近い組が先頭）。
- * DN の文字しか無ければ文字は上り終端側にあるので、最も遠い組が先頭
+ * 組を上り順に並べる。起点は上りの起点に最も近い組: `UP` の矢印なら尾、`DN` の矢印は上端から下る向きに描かれるので矢先。
+ * 矢印が無ければ UP の文字。DN の文字しか無ければ文字は上り終端側にあるので、最も遠い組が先頭
  */
 function orderByAscent(group: Found[]): Flight[] {
   const withArrow = group.find((g) => g.arrow);
-  const withUp = group.find((g) => g.label && !/^(DN|下)/i.test(g.label.text.trim()));
+  const withUp = group.find((g) => g.label && !g.down);
   const withDown = group.find((g) => g.label);
-  const anchor = withArrow ? withArrow.arrow!.tail : withUp ? withUp.label!.at : withDown!.label!.at;
+  const arrowStart = withArrow ? (withArrow.down ? withArrow.arrow!.tip : withArrow.arrow!.tail) : null;
+  const anchor = arrowStart ?? (withUp ? withUp.label!.at : withDown!.label!.at);
   const startNearest = !!(withArrow || withUp);
   const rest = group.map((g) => g.flight);
   const pick = (dist: (f: Flight) => number, nearest: boolean) => {

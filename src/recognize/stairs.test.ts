@@ -104,6 +104,20 @@ describe('階段の認識（合成データ）', () => {
       [0, true],
       [1200, false],
     ]);
+    // 矢印が上段の DN: 上端（y 100）から踊り場を横切って下段の下端（600, 1300）へ下る。矢先が上りの起点なので下段が先頭
+    const dnShaft = [line('階段', 1600, 100, 600, 1300), line('階段', 600, 1300, 560, 1180), line('階段', 600, 1300, 680, 1220)];
+    const byDnArrow = run([...upper, ...treads('階段', 0, 0, 5), ...dnShaft, label('UP', 200, -400), label('DN', 2500, -300)]);
+    expect(byDnArrow).toHaveLength(1);
+    expect(byDnArrow[0].flights.map((f) => [f.rect.minX, f.ascendPositive])).toEqual([
+      [0, true],
+      [1200, false],
+    ]);
+  });
+  it('踏面の端に触れる短線 2 本（手すりの切れ端）で踏面自身を矢印にしない。向きは文字で決まる', () => {
+    const stubs = [line('階段', 800, 0, 830, 25), line('階段', 800, 0, 830, -25)];
+    const s = run([...treads('階段', 0, 0, 5), ...stubs, label('UP', 200, -400)]);
+    expect(s).toHaveLength(1);
+    expect(s[0].flights[0].ascendPositive).toBe(true);
   });
   it('3 組: 直前の組の上り終端に最も近い組が次になる（bbox の距離が近いだけでは選ばない）', () => {
     // A: x 0〜800、+Y へ上る（矢印）。B: A の上端の先で +X へ上る。C: A の下端の脇（bbox は A に最も近い）

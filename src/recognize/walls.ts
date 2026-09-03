@@ -177,7 +177,8 @@ export function computeOutline(walls: Wall[]): Polygon {
 
 /**
  * 重複点と、前後の点と一直線に並ぶ点を落とす。
- * union は矩形どうしが接する位置に頂点を残すので（閉じた矩形の外周が 4 点でなく 8 点になる）、外周は角だけにする
+ * union は矩形どうしが接する位置に頂点を残すので（閉じた矩形の外周が 4 点でなく 8 点になる）、外周は角だけにする。
+ * 先頭の点は「前の点」に元の末尾の点を使うので、末尾が後で落ちても先頭は見直さない。矩形では起きず、起きても余分な頂点が 1 つ残るだけ
  */
 function dropCollinear(poly: Polygon): Polygon {
   const out: Vec2[] = [];

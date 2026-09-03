@@ -58,11 +58,12 @@ const arcEnds = (a: Arc): Vec2[] =>
 /**
  * 壁の隙間を開口にする（設計書 §7.2 手順 4）。判定は上から順に当てる
  * 1. 隙間の中に 60–100°（または 180° 前後）の弧の中心が壁芯の近くにある → 開き戸（外壁でも）。幅 = 半径、両開きは直径
- * 2. 記号の帯（`symbols`）か、壁レイヤー以外の線が隙間を埋めている → 外壁なら窓、内壁ならドア（引き戸・折れ戸）
+ * 2. 記号の帯（`symbols`）か記号の線（`symbolSegs`）が隙間を埋めている → 外壁なら窓、内壁ならドア（引き戸・折れ戸）
  * 3. 何も無い → 開口なしの欠き。壁は分けたまま残す
  * 隙間が `minWidth` 未満なら記号があっても開口にせず、壁をつないで埋める（現実の戸は 600 mm 以上）。
  *
  * `symbols` は隙間を埋める記号の帯。中央線付きの帯と、壁レイヤー以外の帯（建具レイヤーの引き戸など）を渡す。
+ * `symbolSegs` は記号の線。壁レイヤー以外の、帯にならなかった線を渡す（壁レイヤーの短い線は壁端の見切りなので数えない）。
  *
  * 開口を挟む 2 本の壁は 1 本につなぎ、`offset` はつないだ壁の始点（`a`）からの距離で表す。
  * `walls` は入力の壁から開口で置き換わった分だけ本数が減る。`exterior` はどちらかが外壁なら外壁
@@ -71,8 +72,7 @@ export function detectOpenings(
   walls: Wall[],
   entities: PlanEntity[],
   symbols: Band[],
-  wallLayers: Set<string>,
-  nonWallSegs: Seg[],
+  symbolSegs: Seg[],
 ): { walls: Wall[]; openings: Opening[] } {
   const OC = CFG.opening;
   const arcs = entities.filter((e): e is Arc => e.kind === 'arc');
@@ -82,9 +82,6 @@ export function detectOpenings(
     const double = sweep >= OC.doubleArc.minDeg && sweep <= OC.doubleArc.maxDeg;
     return a.radius >= OC.doorArc.minR && a.radius <= OC.doorArc.maxR && (single || double);
   };
-  // 記号線は壁レイヤー以外のもの（壁レイヤーの短い線は壁端の見切りなので数えない）
-  const symbolSegs = nonWallSegs.filter((s) => !wallLayers.has(s.layer));
-
   const outWalls: Wall[] = [];
   const openings: Opening[] = [];
 
@@ -111,8 +108,9 @@ export function detectOpenings(
       };
 
       let opening: Omit<Opening, 'wallId'> | null = null;
-      // 開口の下限未満の隙間（壁の T 字交差に残る 100 mm など）は、記号があっても壁をつないで埋める
-      const narrow = gap <= CFG.wallMergeGap || gap < OC.minWidth;
+      // 開口の下限未満の隙間（壁の T 字交差に残る 100 mm など）は、記号があっても壁をつないで埋める。
+      // `wallMergeGap`（50）以下の隙間は `bandsToWalls` が既につないでいるので、ここで別に見る必要は無い
+      const narrow = gap < OC.minWidth;
       if (!narrow && gap <= OC.maxGap) {
         const exterior = cur.wall.exterior || next.wall.exterior;
         const across = thickness / 2 + OC.arcCenterAcross;

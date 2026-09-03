@@ -24,7 +24,9 @@ export function recognizePlan(plan: Plan2D): PlanModel {
   const nonWallSegs = segs.filter((s) => !bands.usedLineIds.has(s.id));
   // 隙間を埋める記号: 中央線付きの帯と、壁レイヤー以外の帯（建具レイヤーの引き戸など。§7.2 手順 4）
   const fillers = [...bands.symbols, ...bands.wallBands.filter((b) => !wallLayers.has(b.layer))];
-  const { walls, openings } = detectOpenings(exteriorWalls, plan.entities, fillers, wallLayers, nonWallSegs);
+  // 記号の線: 壁レイヤー以外の、帯にならなかった線（壁レイヤーの短い線は壁端の見切りなので数えない）
+  const symbolSegs = nonWallSegs.filter((s) => !wallLayers.has(s.layer));
+  const { walls, openings } = detectOpenings(exteriorWalls, plan.entities, fillers, symbolSegs);
   const texts = plan.entities.filter((e): e is Extract<PlanEntity, { kind: 'text' }> => e.kind === 'text');
   const stairs = detectStairs(nonWallSegs, texts);
   const axes = detectAxes(plan.entities);

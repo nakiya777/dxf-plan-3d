@@ -136,7 +136,7 @@ describe('屋根', () => {
     expect(m.roof?.axis).toBe('y');
     expect(m.roof?.inset).toEqual([1500, 1500]);
     const square: PlanModel = { ...plan(), walls: [wall('a', 0, 0, 3000, 0), wall('b', 3000, 0, 3000, 3000), wall('c', 3000, 3000, 0, 3000), wall('d', 0, 3000, 0, 0)] };
-    expect(addRoof(addFloor(createBuilding(), square)).roof?.inset).toEqual([1500, 1500]);
+    expect(addRoof(addFloor(createBuilding(), square)).roof).toMatchObject({ axis: 'x', inset: [1500, 1500] }); // 同寸なら X
   });
   it('setInset は 100 mm 以内なら 0（切妻）に、既定位置にも 100 mm で寄せ、L/2 を超えない', () => {
     let m = addRoof(addFloor(createBuilding(), plan()));

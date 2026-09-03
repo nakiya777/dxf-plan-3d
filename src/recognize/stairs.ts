@@ -162,8 +162,8 @@ interface Found {
  *
  * 1,500 mm 以内にある組は 1 つの階段にまとめ、組と組の間の空きを踊り場にする（折り返し階段）。
  * 回り段の扇形の踏面は等間隔の平行線にならないので組に入らず、踊り場側の空きとして残る。
- * `flights` は上り順: 先頭は上りの起点（`UP` の矢印なら尾、`DN` の矢印なら矢先。無ければ `UP` 文字。`DN` 文字だけなら最も遠い組）に最も近い組、
- * 以降は直前の組の上り終端に最も近い組
+ * `flights` は上り順: 先頭は `UP` の矢印の尾（無ければ `UP` 文字）に最も近い組。`DN` の矢印の尾（無ければ `DN` 文字）しか
+ * 無ければ、それらは上り終端側にあるので最も遠い組。以降は直前の組の上り終端に最も近い組
  */
 export function detectStairs(nonWallSegs: Seg[], texts: Text[]): Stair[] {
   const { textDistance, arrowDistance, flightJoin } = CFG.stair;
@@ -219,16 +219,17 @@ export function detectStairs(nonWallSegs: Seg[], texts: Text[]): Stair[] {
 }
 
 /**
- * 組を上り順に並べる。起点は上りの起点に最も近い組: `UP` の矢印なら尾、`DN` の矢印は上端から下る向きに描かれるので矢先。
- * 矢印が無ければ UP の文字。DN の文字しか無ければ文字は上り終端側にあるので、最も遠い組が先頭
+ * 組を上り順に並べる。手掛かりは矢印の尾（無ければ UP の文字、それも無ければ DN の文字）。
+ * UP なら手掛かりは上りの起点側にあるので最も近い組が先頭。DN なら矢印は上端から下る向きに描かれ、
+ * 尾も文字も上り終端側にあるので最も遠い組が先頭（矢先は使わない。矢印が上段の矩形に収まる図面では矢先も上段の中にあり、起点を指さない）
  */
 function orderByAscent(group: Found[]): Flight[] {
   const withArrow = group.find((g) => g.arrow);
   const withUp = group.find((g) => g.label && !g.down);
   const withDown = group.find((g) => g.label);
-  const arrowStart = withArrow ? (withArrow.down ? withArrow.arrow!.tip : withArrow.arrow!.tail) : null;
-  const anchor = arrowStart ?? (withUp ? withUp.label!.at : withDown!.label!.at);
-  const startNearest = !!(withArrow || withUp);
+  const cue = withArrow ?? withUp ?? withDown!;
+  const anchor = cue.arrow ? cue.arrow.tail : cue.label!.at;
+  const startNearest = !cue.down;
   const rest = group.map((g) => g.flight);
   const pick = (dist: (f: Flight) => number, nearest: boolean) => {
     let best = 0;

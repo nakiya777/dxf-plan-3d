@@ -104,11 +104,23 @@ describe('階段の認識（合成データ）', () => {
       [0, true],
       [1200, false],
     ]);
-    // 矢印が上段の DN: 上端（y 100）から踊り場を横切って下段の下端（600, 1300）へ下る。矢先が上りの起点なので下段が先頭
+  });
+  it('DN の矢印が踊り場を横切って下段に届く折り返し: 尾は上端にあるので、尾から最も遠い下段が先頭', () => {
+    // 上段（x 1200〜2000、−Y へ上る）の上端（1600, 100）から下段の下端（600, 1300）へ下る矢印。DN は上段の近く、UP は下段の近く
+    const upper = Array.from({ length: 5 }, (_, i) => line('階段', 1200, 1200 - i * 300, 2000, 1200 - i * 300));
     const dnShaft = [line('階段', 1600, 100, 600, 1300), line('階段', 600, 1300, 560, 1180), line('階段', 600, 1300, 680, 1220)];
-    const byDnArrow = run([...upper, ...treads('階段', 0, 0, 5), ...dnShaft, label('UP', 200, -400), label('DN', 2500, -300)]);
-    expect(byDnArrow).toHaveLength(1);
-    expect(byDnArrow[0].flights.map((f) => [f.rect.minX, f.ascendPositive])).toEqual([
+    const s = run([...upper, ...treads('階段', 0, 0, 5), ...dnShaft, label('UP', 200, -400), label('DN', 2500, -300)]);
+    expect(s).toHaveLength(1);
+    expect(s[0].flights.map((f) => [f.rect.minX, f.ascendPositive])).toEqual([
+      [0, true],
+      [1200, false],
+    ]);
+  });
+  it('DN の矢印が上段の矩形に収まる折り返し（上端から下端まで）: 矢先も上段の中にあるが、尾から最も遠い下段が先頭', () => {
+    const upper = Array.from({ length: 5 }, (_, i) => line('階段', 1200, 1200 - i * 300, 2000, 1200 - i * 300));
+    const s = run([...upper, ...treads('階段', 0, 0, 5), ...arrow(1600, 100, 1100), label('UP', 200, -400), label('DN', 2500, -300)]);
+    expect(s).toHaveLength(1);
+    expect(s[0].flights.map((f) => [f.rect.minX, f.ascendPositive])).toEqual([
       [0, true],
       [1200, false],
     ]);

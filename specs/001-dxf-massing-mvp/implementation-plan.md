@@ -24,7 +24,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 
 - コード内のコメントと docstring は日本語。変数名は英語
 - 依存を足したら **`supply-chain-check` スキル**を呼ぶ（Task 1 と Task 17）
-- 座標は設計書 §4.3 の不変条件に従う。モデルは mm・Z 上、シーンは m・Y 上。変換は `src/viewer/coords.ts` の 1 か所だけ
+- 座標は設計書 §4.3 の不変条件に従う。モデルは mm・Z 上、シーンは m・Y 上。変換は `src/geometry/coords.ts` の 1 か所だけ
 
 ## タスク一覧（設計書 §15 のフェーズ対応）
 
@@ -1746,7 +1746,7 @@ export const roofHeightAt = (g: RoofGeom, x: number, y: number) => g.heightAt(x,
 - Create: `src/geometry/coords.ts` `src/geometry/wallShape.ts` `src/geometry/build.ts`
 - Test: `src/geometry/wallShape.test.ts` `src/geometry/build.test.ts`
 
-設計書 §4.3 の座標変換はここ（`src/geometry/coords.ts`）の 1 か所に置く。ジオメトリはすべて**モデル座標（mm・Z 上）で組み立ててから** `MODEL_TO_SCENE` を 1 回掛ける。設計書の「`src/viewer/coords.ts`」はこのファイルに読み替え、設計書 §4.3 の記述も直す。
+設計書 §4.3 の座標変換はここ（`src/geometry/coords.ts`）の 1 か所に置く。ジオメトリはすべて**モデル座標（mm・Z 上）で組み立ててから** `MODEL_TO_SCENE` を 1 回掛ける。設計書 §4.3 も同じ場所を指している（2026-09-03 に同期済み）。
 
 **Step 1: 失敗するテスト（壁の輪郭）**
 

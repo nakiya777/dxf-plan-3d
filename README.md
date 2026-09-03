@@ -26,6 +26,10 @@ Node 22 を前提にしている。
 | `npm run e2e` | E2E（Playwright、7 件）。初回だけ `npx playwright install chromium` が要る。開発サーバーは Playwright が自分で起こすので、先に `npm run dev` を打つ必要はない（動いていればそれを使う）。CI では `reuseExistingServer` を無効にしてあり、必ず自分で起こす |
 | `npm run make-fixtures` | 自作フィクスチャ `fixtures/sample-house*.dxf` を `scripts/make-sample-dxf.ts` から再生成する |
 
+## 実図面フィクスチャについて
+
+`fixtures/forest-s/`（実在する住宅の図面）は権利上の配慮で公開リポジトリに含めず、ローカルにだけ置く。無くてもテストとビルドは通り、実図面を使う試験だけが **失敗ではなく skip** になる（単体 193 件中 13 件、E2E 7 件中 1 件）。判定は `src/recognize/testing.ts` の `hasForestS()`（`existsSync`）で、実図面がある環境では従来どおり全件走る。
+
 ## 使い方
 
 1. 「DXF 平面を描く」を押して DXF ファイルを選ぶ。2D の選択ビューに図面全体が出る

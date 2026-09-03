@@ -5,8 +5,9 @@ import type { PlanEntity } from '../model/types';
 import { decodeDxfBytes } from './decode';
 import { loadDxf } from './index';
 import { parseDxfText } from './parse';
+import { FOREST_S_PATH, hasForestS } from '../recognize/testing';
 
-const FOREST_S = 'fixtures/forest-s/平面立面図.dxf';
+const FOREST_S = FOREST_S_PATH;
 const readBuffer = (p: string) => new Uint8Array(readFileSync(p)).buffer;
 const load = (p: string) => loadDxf(readBuffer(p), p);
 
@@ -32,7 +33,8 @@ const SAMPLE_HOUSE_ENTITIES = 223;
 const CENTERLINE_ENTITIES = 13;
 
 describe('loadDxf', () => {
-  it('forest-s: R12 を取りこぼさず読める（LINE 8211 / TEXT 171 / CIRCLE 94 / ARC 11）', () => {
+  // 実図面は権利上の配慮で公開リポジトリに含めない。ローカルにあるときだけ走る
+  it.skipIf(!hasForestS())('forest-s: R12 を取りこぼさず読める（LINE 8211 / TEXT 171 / CIRCLE 94 / ARC 11）', () => {
     // 正規化で本数が変わるので、読み込みの完全性は生の解析結果で確かめる
     const parsed = new DxfParser().parseSync(decodeDxfBytes(readBuffer(FOREST_S)));
     const rawCount = (type: string) => parsed!.entities.filter((e) => e.type === type).length;
@@ -41,7 +43,7 @@ describe('loadDxf', () => {
     expect(rawCount('CIRCLE')).toBe(94);
     expect(rawCount('ARC')).toBe(11);
   });
-  it('forest-s: 正規化後は 1 mm 未満の線だけが減り、図面範囲が保たれる', () => {
+  it.skipIf(!hasForestS())('forest-s: 正規化後は 1 mm 未満の線だけが減り、図面範囲が保たれる', () => {
     const plan = load(FOREST_S);
     const count = (k: string) => plan.entities.filter((e) => e.kind === k).length;
     expect(count('line')).toBe(8211 - FOREST_S_SUB_MM_LINES);
@@ -55,7 +57,7 @@ describe('loadDxf', () => {
     expect(plan.bbox.maxY).toBeCloseTo(40790.5, 1);
     expect(plan.bbox.minY).toBeCloseTo(790.5, 1);
   });
-  it('forest-s: 弧の角度は度で、玄関ドアの弧が 270→0 になっている', () => {
+  it.skipIf(!hasForestS())('forest-s: 弧の角度は度で、玄関ドアの弧が 270→0 になっている', () => {
     const plan = load(FOREST_S);
     const arc = plan.entities.find((e) => e.kind === 'arc' && Math.abs(e.center.x - 9792) < 2);
     if (arc?.kind !== 'arc') throw new Error('玄関ドアの弧が見つからない');

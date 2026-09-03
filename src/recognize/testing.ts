@@ -1,6 +1,12 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { loadDxf } from '../dxf';
 import type { Plan2D, PlanEntity } from '../model/types';
+
+/** マスター提供の実図面。権利上の配慮で公開リポジトリに含めず、ローカルにだけ置く */
+export const FOREST_S_PATH = 'fixtures/forest-s/平面立面図.dxf';
+
+/** 実図面がローカルにあるか。無いときは実図面を使うテストを skip する */
+export const hasForestS = (): boolean => existsSync(FOREST_S_PATH);
 
 /** テスト用の線分エンティティ */
 export const line = (layer: string, x1: number, y1: number, x2: number, y2: number): PlanEntity => ({
@@ -16,7 +22,7 @@ export const line = (layer: string, x1: number, y1: number, x2: number, y2: numb
  * 帯の数・総延長が一致することを確認済み
  */
 export const forest1F = (): PlanEntity[] => {
-  const plan = loadDxf(new Uint8Array(readFileSync('fixtures/forest-s/平面立面図.dxf')).buffer, 'forest');
+  const plan = loadDxf(new Uint8Array(readFileSync(FOREST_S_PATH)).buffer, 'forest');
   return plan.entities.filter(
     (e) => e.kind === 'line' && e.a.x >= 5500 && e.a.x <= 19800 && e.a.y >= 28800 && e.a.y <= 39800,
   );

@@ -2,7 +2,7 @@ import { Box3, BufferGeometry, LineBasicMaterial, LineSegments, Mesh, MeshLamber
 import { describe, expect, it, vi } from 'vitest';
 import { addFloor, addRoof, createBuilding, rotateRidge, setTopZ } from '../model/building';
 import { recognizePlan } from '../recognize';
-import { planInBox } from '../recognize/testing';
+import { FOREST_S_PATH, hasForestS, planInBox } from '../recognize/testing';
 import type { BuildingModel, PlanModel, Stair, Wall } from '../model/types';
 import { MATERIALS, buildBuilding, disposeBuilding, prismGeometry, roofGeometry, stairwellHoles, wallGeometry } from './build';
 import { MODEL_TO_SCENE, SCENE_TO_MODEL, toScene } from './coords';
@@ -382,10 +382,11 @@ describe('prismGeometry', () => {
   });
 });
 
-describe('実図面（forest-s 1 階 + 2 階）', () => {
+// 実図面は権利上の配慮で公開リポジトリに含めない。ローカルにあるときだけ走る
+describe.skipIf(!hasForestS())('実図面（forest-s 1 階 + 2 階）', () => {
   it('2 階建て + 屋根が組み立てられ、buildBuilding の所要時間を記録する', () => {
-    const f1 = recognizePlan(planInBox('fixtures/forest-s/平面立面図.dxf', [5500, 28800, 19800, 39800]));
-    const f2 = recognizePlan(planInBox('fixtures/forest-s/平面立面図.dxf', [5500, 15000, 19800, 26000]));
+    const f1 = recognizePlan(planInBox(FOREST_S_PATH, [5500, 28800, 19800, 39800]));
+    const f2 = recognizePlan(planInBox(FOREST_S_PATH, [5500, 15000, 19800, 26000]));
     expect(f1.walls.length).toBeGreaterThan(0);
     expect(f2.walls.length).toBeGreaterThan(0);
     let m = oneFloor(f1, 3350);

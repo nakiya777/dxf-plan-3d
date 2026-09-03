@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 // window.__app の型（declare global）だけを取り込む。実行時には消える（アプリ本体を Node に読ませない）
@@ -168,6 +169,8 @@ test('ドラッグ中の描画が 30 fps 以上（自作 DXF 2 階建て、A11�
 });
 
 test('ドラッグ中の描画が 30 fps 以上（forest-s 2 階建て、A11）', async ({ page }) => {
+  // 実図面は権利上の配慮で公開リポジトリに含めない。ローカルにあるときだけ走る
+  test.skip(!existsSync(FOREST_S), 'fixtures/forest-s が無い（実図面はローカルにだけ置く）');
   await page.goto('/');
   await loadAndSelect(page, FOREST_S, FS1);
   await loadAndSelect(page, FOREST_S, FS2);

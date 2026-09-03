@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { extractBands, totalLengthByLayer } from './bands';
 import { toSegments } from './geom';
-import { forest1F, line } from './testing';
+import { forest1F, hasForestS, line } from './testing';
 
 describe('extractBands', () => {
   it('平行な 2 本（距離 120・重なり 3000）は 1 帯になる', () => {
@@ -37,7 +37,8 @@ describe('extractBands', () => {
     expect(r.wallBands).toHaveLength(1);
   });
 
-  it('forest-s 1 階: 壁レイヤー _0-1_1 の総延長が最大で、タイル目地 40 帯以上が周期性で落ちる', () => {
+  // 実図面は権利上の配慮で公開リポジトリに含めない。ローカルにあるときだけ走る
+  it.skipIf(!hasForestS())('forest-s 1 階: 壁レイヤー _0-1_1 の総延長が最大で、タイル目地 40 帯以上が周期性で落ちる', () => {
     const r = extractBands(toSegments(forest1F()));
     const total = totalLengthByLayer(r.wallBands);
     const top = [...total.entries()].sort((p, q) => q[1] - p[1])[0];
@@ -45,7 +46,7 @@ describe('extractBands', () => {
     expect(r.periodic.length).toBeGreaterThanOrEqual(40);
   });
 
-  it('forest-s 1 階: 入れ子をまとめる前の帯が設計書 §7.0 の実測表と一致する', () => {
+  it.skipIf(!hasForestS())('forest-s 1 階: 入れ子をまとめる前の帯が設計書 §7.0 の実測表と一致する', () => {
     // Python 試作（prototype/proto_walls.py）が同じ範囲で出した 187 帯・レイヤー別総延長そのもの
     const r = extractBands(toSegments(forest1F()));
     expect(r.candidates).toHaveLength(187);

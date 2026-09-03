@@ -3,7 +3,7 @@ import type { PlanEntity } from '../model/types';
 import { toSegments } from './geom';
 import { recognizePlan } from './index';
 import { detectStairs } from './stairs';
-import { line, planInBox } from './testing';
+import { FOREST_S_PATH, hasForestS, line, planInBox } from './testing';
 
 describe('階段の認識', () => {
   it('自作 1 階: 直階段 1 つ、flight 1 本、踏面 9、Y 方向に上る', () => {
@@ -20,8 +20,9 @@ describe('階段の認識', () => {
     expect(m.stairs).toHaveLength(1);
     expect(m.stairs[0].flights[0].ascendPositive).toBe(true);
   });
-  it('forest-s 1 階: 階段が 1 つ以上あり、タイル目地は階段にならない（flight は 3 本以下）', () => {
-    const m = recognizePlan(planInBox('fixtures/forest-s/平面立面図.dxf', [5500, 28800, 19800, 39800]));
+  // 実図面は権利上の配慮で公開リポジトリに含めない。ローカルにあるときだけ走る
+  it.skipIf(!hasForestS())('forest-s 1 階: 階段が 1 つ以上あり、タイル目地は階段にならない（flight は 3 本以下）', () => {
+    const m = recognizePlan(planInBox(FOREST_S_PATH, [5500, 28800, 19800, 39800]));
     expect(m.stairs.length).toBeGreaterThanOrEqual(1);
     expect(m.stairs.every((s) => s.flights.length <= 3)).toBe(true);
     // 直進部 4 段（踏面線 5 本・幅 680・間隔 228）だけが flight になる。回り段と上部 2 段は組にならない（設計書 §7.2 手順 6）。

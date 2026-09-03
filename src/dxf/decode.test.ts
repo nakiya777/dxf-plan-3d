@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { decodeDxfBytes, unitScaleFromHeader } from './decode';
+import { FOREST_S_PATH, hasForestS } from '../recognize/testing';
 
 const load = (p: string) => new Uint8Array(readFileSync(p)).buffer;
 
 describe('decodeDxfBytes', () => {
-  it('forest-s（R12・コードページ無し）を Shift_JIS として読める', () => {
-    const text = decodeDxfBytes(load('fixtures/forest-s/平面立面図.dxf'));
+  // 実図面は権利上の配慮で公開リポジトリに含めない。ローカルにあるときだけ走る
+  it.skipIf(!hasForestS())('forest-s（R12・コードページ無し）を Shift_JIS として読める', () => {
+    const text = decodeDxfBytes(load(FOREST_S_PATH));
     expect(text).toContain('１階平面図');
     expect(text).toContain('L.D.K.');
   });

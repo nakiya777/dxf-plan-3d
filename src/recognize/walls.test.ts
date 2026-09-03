@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { extractBands } from './bands';
 import { toSegments } from './geom';
-import { forest1F, line } from './testing';
+import { forest1F, hasForestS, line } from './testing';
 import {
   bandsToWalls,
   bboxOfPoints,
@@ -51,7 +51,8 @@ const uShape = (): Wall[] => {
   }));
 };
 
-describe('壁の組み立て', () => {
+// 実図面は権利上の配慮で公開リポジトリに含めない。ローカルにあるときだけ走る
+describe.skipIf(!hasForestS())('壁の組み立て', () => {
   it('forest-s 1 階: 壁レイヤーは _0-1_1 だけ', () => {
     const r = extractBands(toSegments(forest1F()));
     expect([...decideWallLayers(r)]).toEqual(['_0-1_1']);

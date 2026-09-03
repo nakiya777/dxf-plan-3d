@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { recognizePlan } from './index';
 import type { PlanEntity } from '../model/types';
-import { line, planInBox } from './testing';
+import { FOREST_S_PATH, hasForestS, line, planInBox } from './testing';
 
 describe('開口の認識', () => {
   /**
@@ -10,8 +10,9 @@ describe('開口の認識', () => {
    * 885 の 2 つは弧ではなく建具レイヤーの帯（中央線付きの引き戸と、帯だけの引き戸）が隙間を埋めたもの。
    * 窓も同じ理由で左外壁の 2 つが落ち、外壁の隙間にある 5 つが取れる（2026-09-03 実測）
    */
-  it('forest-s 1 階: 開き戸 2＋引き戸 2、窓 5 は外壁だけ、記号線の無い隙間は開口にしない', () => {
-    const m = recognizePlan(planInBox('fixtures/forest-s/平面立面図.dxf', [5500, 28800, 19800, 39800]));
+  // 実図面は権利上の配慮で公開リポジトリに含めない。ローカルにあるときだけ走る
+  it.skipIf(!hasForestS())('forest-s 1 階: 開き戸 2＋引き戸 2、窓 5 は外壁だけ、記号線の無い隙間は開口にしない', () => {
+    const m = recognizePlan(planInBox(FOREST_S_PATH, [5500, 28800, 19800, 39800]));
     const doors = m.openings.filter((o) => o.type === 'door');
     expect(doors.map((o) => Math.round(o.width)).sort((p, q) => p - q)).toEqual([694, 706, 885, 885]);
     const wallById = new Map(m.walls.map((w) => [w.id, w]));

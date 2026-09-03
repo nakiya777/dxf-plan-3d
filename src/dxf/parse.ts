@@ -20,6 +20,8 @@ import { unitScaleFromHeader } from './decode';
  *
  * 合成が厳密なのは拡大が一様（sx === sy）のときに限る。非一様な拡大と回転が
  * 混ざると円・弧は楕円になり `PlanEntity` では表現できないので、MVP では扱わない。
+ * 非一様スケールに対応するなら、この型を 2x3 行列に置き換え、`apply` と INSERT の
+ * 合成をその積にするのが着地点。
  */
 interface Xf {
   ox: number;
@@ -40,7 +42,10 @@ function apply(p: { x: number; y: number }, xf: Xf): Vec2 {
   return { x: xf.ox + x * cos - y * sin, y: xf.oy + x * sin + y * cos };
 }
 
-/** 角度を [0, 360) に丸める */
+/**
+ * 角度を [0, 360) に丸める。
+ * 全周の弧（例: 0→360）は 0→0 に潰れて区別が付かなくなるが、実装はこのままとする。
+ */
 const normalizeDeg = (deg: number): number => ((deg % 360) + 360) % 360;
 
 /** ポリラインの分割数。設計書 §7.1 手順 3「バルジは 8 分割」 */
@@ -95,15 +100,17 @@ function stripMtextFormat(raw: string): string {
 /**
  * 単位推定に使う図面範囲の長辺。設計書 §7.1 手順 2
  * `$EXTMAX` / `$EXTMIN` があればそれを使い、無い・0 なら全エンティティの外接矩形で代用する。
+ * 代用は全件を 1 周するので、そのときだけ評価されるよう関数で受け取る。
  */
-function extentLongSide(header: Record<string, IPoint | number>, fallback: Box2): number {
+function extentLongSide(header: Record<string, IPoint | number>, fallback: () => Box2): number {
   const min = header.$EXTMIN;
   const max = header.$EXTMAX;
   if (typeof min === 'object' && typeof max === 'object') {
     const side = Math.max(max.x - min.x, max.y - min.y);
     if (side > 0) return side;
   }
-  return Math.max(fallback.maxX - fallback.minX, fallback.maxY - fallback.minY);
+  const box = fallback();
+  return Math.max(box.maxX - box.minX, box.maxY - box.minY);
 }
 
 /** dxf-parser の出力を Plan2D に正規化する。設計書 §7.1 手順 3〜5 */
@@ -120,6 +127,7 @@ export function parseDxfText(text: string, sourceName: string): Plan2D {
 
   const visit = (entities: IEntity[], xf: Xf, depth: number): void => {
     for (const e of entities) {
+      // エンティティ単位の非表示（群コード 60）はフィクスチャに 1 件も無いため未対応
       if (e.inPaperSpace || isHidden(e.layer)) continue;
       const layer = String(e.layer ?? '0');
       switch (e.type) {
@@ -167,6 +175,8 @@ export function parseDxfText(text: string, sourceName: string): Plan2D {
         }
         case 'TEXT':
         case 'MTEXT': {
+          // TEXT と MTEXT は必要な項目（座標・字高・本文）が食い違うだけなので交差型で吸収する。
+          // MTEXT の attachmentPoint（文字の基準位置）を扱うことになったら case を分ける
           const entity = e as ITextEntity & IMtextEntity;
           const body = String(entity.text ?? '');
           raw.push({
@@ -216,7 +226,7 @@ export function parseDxfText(text: string, sourceName: string): Plan2D {
 
   // 単位を mm に揃える（設計書 §7.1 手順 2）
   const header = dxf.header ?? {};
-  const scale = unitScaleFromHeader(header, extentLongSide(header, bboxOf(raw)));
+  const scale = unitScaleFromHeader(header, extentLongSide(header, () => bboxOf(raw)));
   const scaled = scale === 1 ? raw : raw.map((e) => scaleEntity(e, scale));
   // 1 mm 未満の線は捨てる（設計書 §7.1 手順 5）
   const entities = scaled.filter((e) => e.kind !== 'line' || Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) >= 1);
@@ -241,6 +251,9 @@ function scaleEntity(e: PlanEntity, s: number): PlanEntity {
 /**
  * エンティティ列の外接矩形。空なら原点だけの矩形を返す。
  * Task 9 の範囲選択（`recognize/region.ts`）が使う予定なので export のまま残す。
+ *
+ * 弧は掃引範囲を見ず全円として数える近似なので、矩形が広めに出る。
+ * forest-s の弧は最大半径 706 mm なので、範囲選択では最大 694 mm 程度の過大が乗る。
  */
 export function bboxOf(entities: PlanEntity[]): Box2 {
   const box: Box2 = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };

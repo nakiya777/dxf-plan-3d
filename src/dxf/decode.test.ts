@@ -16,6 +16,21 @@ describe('decodeDxfBytes', () => {
   it('UTF-8 版はそのまま読める', () => {
     expect(decodeDxfBytes(load('fixtures/sample-house.dxf'))).toContain('和室');
   });
+  it('$DWGCODEPAGE=ANSI_932 が付いた UTF-8 ファイルも本文優先で読める', () => {
+    // R2007（AC1021）以降は本文が UTF-8 でも、日本語版 CAD の書き出しでは宣言に
+    // ANSI_932 が残ることがある。宣言を信じると Shift_JIS で読んでしまい、
+    // レイヤー名と部屋名が例外も警告も無いまま全滅する
+    const declaration = `$DWGCODEPAGE
+3
+ANSI_932
+9
+$LASTSAVEDBY`;
+    const injected = readFileSync('fixtures/sample-house.dxf', 'utf-8').replace('$LASTSAVEDBY', declaration);
+    expect(injected).toContain('ANSI_932');
+    const text = decodeDxfBytes(new TextEncoder().encode(injected).buffer);
+    expect(text).toContain('和室');
+    expect(text).toContain('通り芯');
+  });
 });
 
 describe('unitScaleFromHeader', () => {

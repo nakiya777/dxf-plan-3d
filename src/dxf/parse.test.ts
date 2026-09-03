@@ -17,6 +17,20 @@ const load = (p: string) => loadDxf(readBuffer(p), p);
  */
 const FOREST_S_SUB_MM_LINES = 86;
 
+/**
+ * `sample-house.dxf` のエンティティ総数。Task 2 の生成スクリプトの出力を数え直した実測値。
+ * 内訳は LINE 151 / TEXT 39 / CIRCLE 24 / ARC 9 で、レイヤー別では
+ * 壁 72・建具 46（LINE 37 + ARC 9）・階段 30・通り芯 60（LINE 12 + CIRCLE 24 + TEXT 24）・
+ * 文字 13・図枠 2。1 mm 未満の線は無いので正規化で減らない。
+ */
+const SAMPLE_HOUSE_ENTITIES = 223;
+
+/**
+ * 壁芯付き版だけが持つ `壁芯` レイヤーの線の本数。すべて line。
+ * 1 階が外周 4 本 + 内部 3 本、2 階が外周 4 本 + 内部 2 本で計 13 本。
+ */
+const CENTERLINE_ENTITIES = 13;
+
 describe('loadDxf', () => {
   it('forest-s: R12 を取りこぼさず読める（LINE 8211 / TEXT 171 / CIRCLE 94 / ARC 11）', () => {
     // 正規化で本数が変わるので、読み込みの完全性は生の解析結果で確かめる
@@ -38,6 +52,8 @@ describe('loadDxf', () => {
     // Plan2D.bbox はエンティティの外接矩形なので、最右の図枠線 x = 58162.5 が上端になる
     expect(plan.bbox.maxX).toBeCloseTo(58162.5, 1);
     expect(plan.bbox.minX).toBeCloseTo(707.5, 1);
+    expect(plan.bbox.maxY).toBeCloseTo(40790.5, 1);
+    expect(plan.bbox.minY).toBeCloseTo(790.5, 1);
   });
   it('forest-s: 弧の角度は度で、玄関ドアの弧が 270→0 になっている', () => {
     const plan = load(FOREST_S);
@@ -50,18 +66,22 @@ describe('loadDxf', () => {
   it('自作 3 変種: UTF-8 版と Shift_JIS 版は同じ Plan2D になる（設計書 §11.2）', () => {
     const utf8 = load('fixtures/sample-house.dxf');
     const sjis = load('fixtures/sample-house-sjis.dxf');
-    expect(utf8.entities).toHaveLength(223);
+    expect(utf8.entities).toHaveLength(SAMPLE_HOUSE_ENTITIES);
     expect(sjis.entities).toEqual(utf8.entities);
     expect(sjis.bbox).toEqual(utf8.bbox);
+    // $INSUNITS = 0・$EXTMAX 無しなので、単位はエンティティ外接矩形からの推定だけに頼る。
+    // 設計書が [推定] と印を付けた最も脆い判断なので、建物の実寸で押さえる。
+    // これが無いと 1000 倍の取り違え（20.78 m が 20.78 km になる）が素通りする
+    expect(utf8.bbox).toEqual({ minX: -1500, minY: -1500, maxX: 20780, maxY: 9080 });
   });
   it('自作 3 変種: 壁芯付き版は 壁芯 レイヤーの 13 本だけ増える', () => {
     const base = load('fixtures/sample-house.dxf');
     const withAxis = load('fixtures/sample-house-with-centerline.dxf');
-    expect(withAxis.entities).toHaveLength(236);
-    expect(withAxis.entities.filter((e) => e.layer === '壁芯')).toHaveLength(13);
+    expect(withAxis.entities).toHaveLength(SAMPLE_HOUSE_ENTITIES + CENTERLINE_ENTITIES);
+    expect(withAxis.entities.filter((e) => e.layer === '壁芯')).toHaveLength(CENTERLINE_ENTITIES);
     expect(withAxis.entities.filter((e) => e.layer !== '壁芯')).toEqual(base.entities);
   });
-  it('自作版: レイヤー名が保たれ、通り芯の円が 12 個ある', () => {
+  it('自作版: レイヤー名が保たれ、通り芯の円が 2 フロア分 24 個ある', () => {
     const plan = load('fixtures/sample-house.dxf');
     expect(plan.entities.filter((e) => e.kind === 'circle' && e.layer === '通り芯').length).toBe(24); // 1 階 12 + 2 階 12
     expect(new Set(plan.entities.map((e) => e.layer))).toContain('壁');
@@ -224,10 +244,13 @@ describe('parseDxfText: 単位の正規化', () => {
     const line = plan.entities.find((e) => e.kind === 'line');
     const circle = plan.entities.find((e) => e.kind === 'circle');
     const text = plan.entities.find((e) => e.kind === 'text');
-    expect(line?.kind === 'line' && line.b.x).toBeCloseTo(10000, 6);
-    expect(circle?.kind === 'circle' && circle.center.x).toBeCloseTo(5000, 6);
-    expect(circle?.kind === 'circle' && circle.radius).toBeCloseTo(1000, 6);
-    expect(text?.kind === 'text' && text.height).toBeCloseTo(300, 6);
+    if (line?.kind !== 'line') throw new Error('線が無い');
+    if (circle?.kind !== 'circle') throw new Error('円が無い');
+    if (text?.kind !== 'text') throw new Error('文字が無い');
+    expect(line.b.x).toBeCloseTo(10000, 6);
+    expect(circle.center.x).toBeCloseTo(5000, 6);
+    expect(circle.radius).toBeCloseTo(1000, 6);
+    expect(text.height).toBeCloseTo(300, 6);
     expect(plan.bbox).toEqual({ minX: 0, minY: 0, maxX: 10000, maxY: 5000 });
   });
 });

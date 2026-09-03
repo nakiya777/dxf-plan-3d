@@ -17,3 +17,6 @@ export const toScene = (x: number, y: number, z: number): Vector3 => new Vector3
 
 /** シーン → モデル（ハンドルのドラッグで使う）。共有の定数なので、利用側は `clone()` してから触る */
 export const SCENE_TO_MODEL = MODEL_TO_SCENE.clone().invert();
+
+/** シーン座標の 1 点（または差分ベクトル）をモデル座標にする。変換はここ 1 か所に集約する */
+export const toModel = (v: Vector3): Vector3 => v.clone().applyMatrix4(SCENE_TO_MODEL);

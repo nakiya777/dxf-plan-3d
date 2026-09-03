@@ -2,7 +2,7 @@ import {
   BoxGeometry, BufferGeometry, ConeGeometry, Group, Mesh, MeshBasicMaterial, Object3D, OctahedronGeometry, Plane, Raycaster,
   SphereGeometry, TorusGeometry, Vector2, Vector3,
 } from 'three';
-import { SCENE_TO_MODEL, toScene } from '../geometry/coords';
+import { toModel, toScene } from '../geometry/coords';
 import { centerlineRect, moveFloor, rotateRidge, setInset, setRidgeOffset, setTopZ, topFloorRect } from '../model/building';
 import type { BuildingModel, FloorBlock } from '../model/types';
 import { store } from '../state/store';
@@ -20,8 +20,8 @@ const DRAG_THRESHOLD_PX = 6;
 const SCREEN_SCALE = 0.018;
 /** 紫回転矢印を棟中点から浮かせる高さ（ハンドル 1 単位系） */
 const ROTATE_LIFT = 1.2;
-/** 高さモードで鉛直線とみなす線分の半長（m）。建物の高さより十分大きければよい */
-const VERTICAL_HALF_LENGTH = 1000;
+/** 鉛直 1 m を画面に投影した長さ（px）がこれ未満なら高さドラッグを無視する。天頂付近での発散を防ぐ */
+const MIN_VERTICAL_PX = 2;
 const HOVER_TEXT: Record<Kind, string> = { floor: '建物の高さ / 横へ移動', rotate: '棟の向きを変える', ridgeEnd: '', ridgeMid: '' };
 
 /** ジオメトリと材質は共有し、再構築のたびに作らない */
@@ -42,8 +42,7 @@ interface Drag {
   /** 青ハンドルの操作モード。最初の 6 px で決めて固定する */
   mode?: 'height' | 'move';
   startModel: BuildingModel;
-  /** 掴んだ点（シーン座標）。高さは鉛直線上、横は水平面上 */
-  grabZ: number;
+  /** 掴んだ点（シーン座標）。横移動モードで水平面の高さとして使う */
   grabXY: Vector3;
   moved: boolean;
 }
@@ -56,21 +55,25 @@ export class HandleController {
   private readonly ray = new Raycaster();
   private readonly label = makeLabel();
   private drag?: Drag;
+  private hoverText = '';
   private readonly el: HTMLCanvasElement;
   private readonly onDown = (e: PointerEvent) => this.down(e);
   private readonly onMove = (e: PointerEvent) => this.move(e);
   private readonly onUp = (e: PointerEvent) => this.up(e);
+  private readonly unsubscribeBuild: () => void;
+  private readonly unsubscribeFrame: () => void;
 
   constructor(private readonly viewer: Viewer) {
     viewer.scene.add(this.label);
-    viewer.afterBuild((_, model) => this.rebuild(model));
-    viewer.everyFrame(() => this.scaleToScreen());
+    this.unsubscribeBuild = viewer.afterBuild((_, model) => this.rebuild(model));
+    this.unsubscribeFrame = viewer.everyFrame(() => this.scaleToScreen());
     this.el = viewer.renderer.domElement;
     // capture 段階で先に拾い、ハンドル上なら OrbitControls に渡さない（§6.7）
     this.el.addEventListener('pointerdown', this.onDown, { capture: true });
     this.el.addEventListener('pointermove', this.onMove);
     this.el.addEventListener('pointerup', this.onUp);
     this.el.addEventListener('pointercancel', this.onUp);
+    // `afterBuild` は今後の再構築時にしか呼ばれないため、既に構築済みなら初回分をここで作る
     if (viewer.built) this.rebuild(store.get().model);
   }
 
@@ -79,6 +82,8 @@ export class HandleController {
     this.el.removeEventListener('pointermove', this.onMove);
     this.el.removeEventListener('pointerup', this.onUp);
     this.el.removeEventListener('pointercancel', this.onUp);
+    this.unsubscribeBuild();
+    this.unsubscribeFrame();
     this.viewer.handles.clear();
     this.viewer.scene.remove(this.label);
   }
@@ -115,10 +120,15 @@ export class HandleController {
     for (const h of this.viewer.handles.children) h.scale.setScalar(h.position.distanceTo(this.viewer.camera.position) * SCREEN_SCALE);
   }
 
-  /** カーソル位置にレイを張り、当たったハンドル（グループならその親）を返す */
-  private pick(e: PointerEvent): Object3D | undefined {
+  /** カーソル位置からレイを張る（NDC 変換はここ 1 か所） */
+  private setRay(e: PointerEvent): void {
     const r = this.el.getBoundingClientRect();
     this.ray.setFromCamera(new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.viewer.camera);
+  }
+
+  /** カーソル位置にレイを張り、当たったハンドル（グループならその親）を返す */
+  private pick(e: PointerEvent): Object3D | undefined {
+    this.setRay(e);
     const hit = this.ray.intersectObjects(this.viewer.handles.children, true)[0]?.object;
     if (!hit) return undefined;
     return hit.parent === this.viewer.handles ? hit : hit.parent!;
@@ -126,19 +136,27 @@ export class HandleController {
 
   /** レイと水平面（シーン y = height）の交点 */
   private hitGround(e: PointerEvent, height: number): Vector3 | null {
-    this.pick(e);
+    this.setRay(e);
     const p = new Vector3();
     return this.ray.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), -height), p) ? p : null;
   }
 
-  /** マウスのレイに最も近い、`through` を通る鉛直線上の点の高さ（§6.3「画面 Y を鉛直線に射影」） */
-  private projectToVertical(e: PointerEvent, through: Vector3): number {
-    this.pick(e);
-    const bottom = through.clone().setY(through.y - VERTICAL_HALF_LENGTH);
-    const top = through.clone().setY(through.y + VERTICAL_HALF_LENGTH);
-    const onLine = new Vector3();
-    this.ray.ray.distanceSqToSegment(bottom, top, undefined, onLine);
-    return onLine.y;
+  /**
+   * 画面 Y を鉛直線に射影する（§6.3）。`through` の鉛直 1 m を画面に投影して「鉛直 1 m が何 px か」を求め、
+   * ドラッグの画面移動量（px）をその方向に射影して高さの変化量（m）に直す。
+   * Ray と線分の最短距離（distanceSqToSegment）による射影は視線が鉛直に近いと sin^2(theta) で割って発散するため使わない
+   */
+  private screenDeltaToHeight(delta: Vector2, through: Vector3): number {
+    const r = this.el.getBoundingClientRect();
+    const toPx = (p: Vector3) => {
+      const n = p.clone().project(this.viewer.camera);
+      return new Vector2((n.x + 1) / 2 * r.width, (1 - n.y) / 2 * r.height);
+    };
+    const base = toPx(through);
+    const up = toPx(through.clone().setY(through.y + 1)).sub(base);
+    const lengthSq = up.lengthSq();
+    if (lengthSq < MIN_VERTICAL_PX * MIN_VERTICAL_PX) return 0;   // 天頂付近: 鉛直方向が画面上でほぼ点になり不安定
+    return delta.dot(up) / lengthSq;
   }
 
   private down(e: PointerEvent): void {
@@ -152,7 +170,6 @@ export class HandleController {
       data: hit.userData as HandleData,
       start: new Vector2(e.clientX, e.clientY),
       startModel: store.get().model,
-      grabZ: this.projectToVertical(e, hit.position),
       grabXY: this.hitGround(e, hit.position.y) ?? hit.position.clone(),
       moved: false,
     };
@@ -168,24 +185,25 @@ export class HandleController {
     else if (d.data.kind === 'ridgeEnd' || d.data.kind === 'ridgeMid') this.dragRidge(e, d);
   }
 
-  /** 青ハンドル: 高さモードは鉛直線に射影して setTopZ、横移動モードは水平面にレイキャストして moveFloor */
+  /** 青ハンドル: 高さモードは画面 Y を鉛直線に射影して setTopZ、横移動モードは水平面にレイキャストして moveFloor */
   private dragFloor(e: PointerEvent, d: Drag, delta: Vector2): void {
     d.mode ??= Math.abs(delta.y) >= Math.abs(delta.x) ? 'height' : 'move';
     const floor = d.startModel.floors.find((f) => f.id === d.data.floorId)!;
     if (d.mode === 'height') {
       const handle = this.viewer.handles.children.find((h) => (h.userData as HandleData).floorId === floor.id);
       if (!handle) return;
-      const y = this.projectToVertical(e, handle.position);
-      const next = setTopZ(d.startModel, floor.id, floor.topZ + (y - d.grabZ) * 1000);
+      const dz = toModel(new Vector3(0, this.screenDeltaToHeight(delta, handle.position), 0)).z;
+      const next = setTopZ(d.startModel, floor.id, floor.topZ + dz);
       store.set({ model: next });
       const updated = next.floors.find((f) => f.id === floor.id)!;
       const rebuilt = this.viewer.handles.children.find((h) => (h.userData as HandleData).floorId === floor.id);
       if (rebuilt) this.label.position.copy(rebuilt.position);
       this.label.setText(`壁の高さ ${((updated.topZ - next.floor1Level) / 1000).toFixed(2)} m`);
     } else {
+      // 水平面の高さは掴んだ点のまま固定する（仕様は Z = baseZ だが、掴んだ点からの差分だけを使うので結果は同じ）
       const p = this.hitGround(e, d.grabXY.y);
       if (!p) return;
-      const dm = p.clone().sub(d.grabXY).applyMatrix4(SCENE_TO_MODEL);   // 平行移動成分は 0 なのでそのまま掛けてよい
+      const dm = toModel(p.clone().sub(d.grabXY));
       store.set({ model: moveFloor(d.startModel, floor.id, dm.x, dm.y) });
     }
   }
@@ -198,7 +216,7 @@ export class HandleController {
     const rect = topFloorRect(model);
     const p = this.hitGround(e, d.grabXY.y);
     if (!p) return;
-    const mp = p.clone().applyMatrix4(SCENE_TO_MODEL);   // 建物座標 mm
+    const mp = toModel(p);   // 建物座標 mm
     if (d.data.kind === 'ridgeEnd') {
       const along = roof.axis === 'x' ? mp.x : mp.y;
       const [min, max] = roof.axis === 'x' ? [rect.minX, rect.maxX] : [rect.minY, rect.maxY];
@@ -215,7 +233,7 @@ export class HandleController {
     this.drag = undefined;
     if (this.el.hasPointerCapture(e.pointerId)) this.el.releasePointerCapture(e.pointerId);
     this.viewer.controls.enabled = true;
-    this.label.setText('');
+    this.setHoverText('');
     // 紫はクリック（動かさずに離す）で棟の向きを切り替える
     if (!d.moved && d.data.kind === 'rotate') store.updateModel(rotateRidge);
   }
@@ -225,6 +243,13 @@ export class HandleController {
     this.el.style.cursor = hit ? 'pointer' : '';
     const text = hit ? HOVER_TEXT[(hit.userData as HandleData).kind] : '';
     if (hit && text) this.label.position.copy(hit.position);
+    this.setHoverText(text);
+  }
+
+  /** 前回と同じ文字列なら DOM を書き換えない */
+  private setHoverText(text: string): void {
+    if (text === this.hoverText) return;
+    this.hoverText = text;
     this.label.setText(text);
   }
 }
@@ -234,10 +259,10 @@ export class HandleController {
  * 外形が空なら外壁芯の bbox、外壁も無ければハンドルを出さない（undefined）
  */
 function southWestCorner(floor: FloorBlock): { x: number; y: number } | undefined {
-  const points = floor.plan.outline.length > 0 ? floor.plan.outline : floor.plan.walls.filter((w) => w.exterior).flatMap((w) => [w.a, w.b]);
-  if (points.length === 0) return undefined;
-  const rect = points.length === floor.plan.outline.length && floor.plan.outline.length > 0
-    ? { minX: Math.min(...points.map((p) => p.x)), minY: Math.min(...points.map((p) => p.y)) }
+  const outline = floor.plan.outline;
+  if (outline.length === 0 && !floor.plan.walls.some((w) => w.exterior)) return undefined;
+  const rect = outline.length > 0
+    ? { minX: Math.min(...outline.map((p) => p.x)), minY: Math.min(...outline.map((p) => p.y)) }
     : centerlineRect(floor.plan);
   return { x: rect.minX + floor.offset.x, y: rect.minY + floor.offset.y };
 }

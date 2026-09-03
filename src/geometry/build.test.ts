@@ -4,7 +4,7 @@ import { addFloor, addRoof, createBuilding, rotateRidge, setTopZ } from '../mode
 import { recognizePlan } from '../recognize';
 import { FOREST_S_PATH, hasForestS, planInBox } from '../recognize/testing';
 import type { BuildingModel, PlanModel, Stair, Wall } from '../model/types';
-import { MATERIALS, buildBuilding, disposeBuilding, prismGeometry, roofGeometry, stairwellHoles, wallGeometry } from './build';
+import { MATERIALS, RENDER_ORDER, buildBuilding, disposeBuilding, prismGeometry, roofGeometry, stairwellHoles, wallGeometry } from './build';
 import { MODEL_TO_SCENE, SCENE_TO_MODEL, toScene } from './coords';
 
 const wall = (id: string, x1: number, y1: number, x2: number, y2: number, exterior = true, thickness = 150): Wall =>
@@ -101,7 +101,10 @@ describe('buildBuilding', () => {
     // バブルの半径は 250 mm
     const bubble = box(decor[1]);
     expect(bubble.max.x - bubble.min.x).toBeCloseTo(0.5, 6);
-    expect((decor[0].material as LineBasicMaterial).color.getHex()).toBe(0x3b7dd8);
+    const decorMat = decor[0].material as LineBasicMaterial;
+    expect(decorMat.color.getHex()).toBe(0x3b7dd8);
+    expect(decorMat.depthTest).toBe(false);   // 壁越しにも見える
+    expect(decor[0].renderOrder).toBe(RENDER_ORDER.line);
   });
   it('2 階は 1 階の板の上（topZ + 100）から始まり、2 階の板に基礎は付かない', () => {
     let m = oneFloor();
@@ -168,11 +171,20 @@ describe('wallGeometry', () => {
     expect(xs.has(-3.55)).toBe(true);
     expect(xs.has(-1.73)).toBe(true);
   });
-  it('本体は薄灰、稜線は濃灰の線', () => {
+  it('本体はほぼ白の薄い透過面（opacity 0.85・depthWrite あり）、稜線は濃灰で depthTest 無し・面より後に描く', () => {
     const w = children(oneFloor(), 'wall')[0] as Mesh;
-    expect((w.material as MeshLambertMaterial).color.getHex()).toBe(0xe6e6e6);
+    const body = w.material as MeshLambertMaterial;
+    expect(body.color.getHex()).toBe(0xf4f4f4);
+    expect(body.transparent).toBe(true);
+    expect(body.opacity).toBe(0.85);
+    expect(body.depthWrite).toBe(true);
     const edge = w.children[0] as LineSegments;
-    expect((edge.material as LineBasicMaterial).color.getHex()).toBe(0x333333);
+    const edgeMat = edge.material as LineBasicMaterial;
+    expect(edgeMat.color.getHex()).toBe(0x1a1a1a);
+    expect(edgeMat.depthTest).toBe(false);
+    expect(edgeMat.transparent).toBe(true);   // 透過パスで面の後に描かせるため
+    expect(edge.renderOrder).toBe(RENDER_ORDER.line);
+    expect(edge.renderOrder).toBeGreaterThan(w.renderOrder);
   });
   it('面が外向き: 壁の外側の面の法線は建物の外を向く', () => {
     const g = wallGeometry(plan.walls[0], plan.walls, [], 2800, floor);
@@ -248,7 +260,15 @@ describe('屋根と妻壁', () => {
     expect(lines.geometry.getAttribute('position').count).toBe(2);
     expect(box(lines).max.y).toBeCloseTo((ridgeZ + 5) / 1000, 6); // 上面から 5 mm 浮かせる
     expect((lines.material as LineBasicMaterial).color.getHex()).toBe(0xe53935);
-    expect((roof.material as MeshLambertMaterial).color.getHex()).toBe(0x3a3a3a);
+    expect((lines.material as LineBasicMaterial).depthTest).toBe(true);   // 裏側の隅棟が屋根越しに浮かないよう、赤線だけは深度検査を残す
+    const roofMat = roof.material as MeshLambertMaterial;
+    expect(roofMat.color.getHex()).toBe(0x3a3a3a);
+    expect(roofMat.opacity).toBe(1);   // 屋根は不透明のまま
+    expect(roofMat.depthWrite).toBe(true);
+    // 描画順: 壁の稜線 < 屋根 < 赤線。屋根が線の後に描かれるので、屋根の下の稜線は屋根に隠れる
+    const wallEdge = (g.group.children.find((c) => c.name === 'wall') as Mesh).children[0];
+    expect(wallEdge.renderOrder).toBeLessThan(roof.renderOrder);
+    expect(roof.renderOrder).toBeLessThan(lines.renderOrder);
   });
   it.each(['x', 'y'] as const)('屋根の面は上面が外向き（上面の法線は +y）: 棟 %s 方向', (axis) => {
     let m = addRoof(oneFloor());

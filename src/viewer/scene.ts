@@ -19,6 +19,9 @@ const FIT_DIRECTION = new Vector3(-0.9, 0.7, 1).normalize();
 const FIT_DISTANCE_FACTOR = 1.3;
 /** カメラが地面の下に潜らない上限（天頂からの角度）。ほぼ真上までは許す */
 const MAX_POLAR_ANGLE = Math.PI / 2 - 0.05;
+/** 照明の強さ（従来単位）。環境光を主にし、平行光は面の向きが分かる程度に留める */
+const AMBIENT_INTENSITY = 1.0;
+const SUN_INTENSITY = 0.25;
 /** 「正面の壁を透かす」の不透明度。稜線は残るので、輪郭で位置は分かる */
 const SEE_THROUGH_OPACITY = 0.15;
 
@@ -43,17 +46,19 @@ export class Viewer {
   private readonly resizeObserver: ResizeObserver;
   /** 「正面の壁を透かす」の状態。ON の間は毎フレーム、カメラに向いている外壁の材質を差し替える */
   private seeThrough = false;
-  /** 半透明の壁の材質。1 つ作って共有し、`dispose` で捨てる（`disposeBuilding` は共有材質を触らない） */
-  private readonly seeThroughMaterial = new MeshLambertMaterial({ color: 0xe6e6e6, transparent: true, opacity: SEE_THROUGH_OPACITY, depthWrite: false });
+  /** 半透明の壁の材質。本体と同じ色で不透明度だけ 0.15。1 つ作って共有し、`dispose` で捨てる（`disposeBuilding` は共有材質を触らない） */
+  private readonly seeThroughMaterial = new MeshLambertMaterial({ color: MATERIALS.body.color, transparent: true, opacity: SEE_THROUGH_OPACITY, depthWrite: false });
   /** 現在の建物の外壁 Mesh と、外壁芯の外接矩形の中心（建物座標 mm）。`setModel` のたびに取り直す */
   private exteriorWalls: Mesh[] = [];
   private buildingCenter: Vec2 = { x: 0, y: 0 };
 
   constructor(private readonly container: HTMLElement) {
     this.scene.background = new Color(0xfafafa);
-    const sun = new DirectionalLight(0xffffff, 0.6);
+    // 環境光 1.0・平行光 0.25 の比で、影側の面が落ち込まないようにする（参考動画の壁はほぼ白のまま）。
+    // three r155 以降は光の強さが物理単位（Lambert で 1/π が掛かる）なので、π を掛けて従来の 1.0・0.25 相当にする
+    const sun = new DirectionalLight(0xffffff, SUN_INTENSITY * Math.PI);
     sun.position.set(5, 10, 7);
-    this.scene.add(new AmbientLight(0xffffff, 0.9), sun);
+    this.scene.add(new AmbientLight(0xffffff, AMBIENT_INTENSITY * Math.PI), sun);
 
     // 1 m 格子と 0.1 m の補助格子。補助格子は僅かに沈めて主格子とのちらつきを避ける
     const coarse = new GridHelper(GRID_SIZE, GRID_SIZE, 0xc8c8c8, 0xdedede);

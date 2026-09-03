@@ -8,14 +8,27 @@ import type { Box2, BuildingModel, FloorBlock, Opening, PlanEntity, Polygon, Sta
 import { MODEL_TO_SCENE } from './coords';
 import { buildWallProfile } from './wallShape';
 
-/** 材質（設計書 §8.2・§8.4・§8.1）。薄灰の本体、濃灰の稜線、青の飾り線、濃灰の屋根、赤の屋根編集線 */
+/**
+ * 材質（設計書 §8.2・§8.4・§8.1）。参考動画の見え方に合わせ、本体（壁・板・基礎・階段）はほぼ白の薄い透過面、
+ * 線（稜線・青の飾り線）は `depthTest` 無しで壁越しにも見える。屋根は不透明の濃灰、屋根編集線は赤。
+ * 線と屋根に `transparent: true` を付けるのは色のためではなく、three.js の透過パス（本体の後）で描かせて
+ * `RENDER_ORDER` の順序を効かせるため（不透明パスは透過パスより常に先に描かれる）
+ */
 export const MATERIALS = {
-  body: new MeshLambertMaterial({ color: 0xe6e6e6 }),
-  roof: new MeshLambertMaterial({ color: 0x3a3a3a }),
-  edge: new LineBasicMaterial({ color: 0x333333 }),
-  decor: new LineBasicMaterial({ color: 0x3b7dd8 }),
-  roofEdge: new LineBasicMaterial({ color: 0xe53935 }),
+  body: new MeshLambertMaterial({ color: 0xf4f4f4, transparent: true, opacity: 0.85 }),
+  roof: new MeshLambertMaterial({ color: 0x3a3a3a, transparent: true }),
+  edge: new LineBasicMaterial({ color: 0x1a1a1a, transparent: true, depthTest: false }),
+  decor: new LineBasicMaterial({ color: 0x3b7dd8, transparent: true, depthTest: false }),
+  roofEdge: new LineBasicMaterial({ color: 0xe53935, transparent: true }),
 };
+
+/**
+ * 描画順。本体 → 線 → 屋根 → 屋根の赤線。
+ * 本体は `depthWrite` を残したまま three.js の既定（奥から手前）で並べ、線はその後に `depthTest` 無しで重ねる。
+ * 屋根は線の後に深度検査ありで描くので、屋根に隠れる壁の稜線は屋根が塗り潰し、屋根の上に線が浮かない。
+ * 赤線は屋根の後。屋根の裏側の隅棟が透けて浮かないよう、赤線だけは `depthTest` を残す（上面から 5 mm 浮かせてあるので屋根には隠れない）
+ */
+export const RENDER_ORDER = { body: 0, line: 10, roof: 20, roofEdge: 30 } as const;
 
 /** `EdgesGeometry` のしきい値（§8.2: 20°） */
 const EDGE_THRESHOLD_DEG = 20;
@@ -74,9 +87,13 @@ export function buildBuilding(model: BuildingModel): BuiltBuilding {
   });
 
   if (roofGeom && model.roof) {
-    group.add(named(new Mesh(roofGeometry(roofGeom, model.roof.thickness), MATERIALS.roof), 'roof'));
+    const roofMesh = named(new Mesh(roofGeometry(roofGeom, model.roof.thickness), MATERIALS.roof), 'roof');
+    roofMesh.renderOrder = RENDER_ORDER.roof;
+    group.add(roofMesh);
     const lifted = roofGeom.edges.map(([a, b]): [number[], number[]] => [[a.x, a.y, a.z + ROOF_EDGE_LIFT], [b.x, b.y, b.z + ROOF_EDGE_LIFT]]);
-    group.add(named(segmentsToLines(lifted, MATERIALS.roofEdge), 'roofEdge'));
+    const roofLines = named(segmentsToLines(lifted, MATERIALS.roofEdge), 'roofEdge');
+    roofLines.renderOrder = RENDER_ORDER.roofEdge;
+    group.add(roofLines);
   }
   return { group, roofGeom };
 }
@@ -97,7 +114,10 @@ const boxPolygon = (b: Box2): Polygon => [{ x: b.minX, y: b.minY }, { x: b.maxX,
 /** 本体メッシュ + 稜線（§8.2） */
 function solidMesh(geometry: BufferGeometry, material = MATERIALS.body): Mesh {
   const mesh = new Mesh(geometry, material);
-  mesh.add(new LineSegments(new EdgesGeometry(geometry, EDGE_THRESHOLD_DEG), MATERIALS.edge));
+  mesh.renderOrder = RENDER_ORDER.body;
+  const edges = new LineSegments(new EdgesGeometry(geometry, EDGE_THRESHOLD_DEG), MATERIALS.edge);
+  edges.renderOrder = RENDER_ORDER.line;
+  mesh.add(edges);
   return mesh;
 }
 
@@ -294,7 +314,9 @@ function segmentsToLines(segs: [number[], number[]][], material: LineBasicMateri
   const g = new BufferGeometry();
   g.setAttribute('position', new Float32BufferAttribute(pos, 3));
   g.applyMatrix4(MODEL_TO_SCENE);
-  return new LineSegments(g, material);
+  const lines = new LineSegments(g, material);
+  lines.renderOrder = RENDER_ORDER.line;
+  return lines;
 }
 
 /** 複数の非インデックスジオメトリを 1 つにまとめる。`ExtrudeGeometry` の出力には index が付かないので、それだけを扱う */

@@ -206,6 +206,8 @@ Expected: FAIL（ファイルが無い）
 
 `scripts/make-sample-dxf.ts`（`npx tsx scripts/make-sample-dxf.ts` で実行）:
 
+> **この節のコードは着手時の下書きである。** 実装後のレビューを経て、生成ロジックは `scripts/sample-dxf.ts`（副作用なし・`buildDxf()` と `buildSjisText()` を export）と `scripts/make-sample-dxf.ts`（書き出すだけの実行部）に分かれ、レイヤー名は `LAYER` 定数に集約され、階段の深さは踏面数 × 間隔から導く形になった。**現在の正はコミット済みのファイルであり、この下書きではない。** 実行は `npm run make-fixtures`。
+
 ```ts
 /**
  * 動画のサンプル住宅に相当する平面図 DXF を生成する。
@@ -1034,7 +1036,16 @@ export const centerlineBBox = (walls: Wall[]): Box2 => bboxOfPoints(walls.flatMa
 export { normalOf, type Seg };
 ```
 
-**Step 4: 通ることを確認** → `npx vitest run src/recognize/walls.test.ts` PASS。`polygon-clipping` の型定義が無ければ `src/types/polygon-clipping.d.ts` に `declare module 'polygon-clipping';` を置く。
+**Step 4: 通ることを確認** → `npx vitest run src/recognize/walls.test.ts` PASS
+
+**polygon-clipping の実測（2026-09-03 に確認済み）**
+
+- 型定義は同梱されている（`dist/polygon-clipping.d.ts` に `declare module "polygon-clipping"`）。**自前の `.d.ts` は不要**
+- **default export は無い。** 上のコードの `import polygonClipping from 'polygon-clipping'` は型検査を通らないので、`import { union } from 'polygon-clipping'` に書き換えて `union(...)` を直接呼ぶ
+- 公開型は `Pair = [number, number]` / `Ring = Pair[]` / `Polygon = Ring[]` / `MultiPolygon = Polygon[]`。`union(geom, ...geoms): MultiPolygon`
+- 矩形 9,100 × 5,915・厚さ 150 の壁帯 4 本を和集合すると、`MultiPolygon` 1 件・外周 5 頂点・**穴 1 個**（内側の空間）が返る。`poly[0]` が外周、`poly[1]` 以降が穴
+- 返る環は**閉じている**（先頭と末尾が同一点）。`outer.slice(0, -1)` で閉じる点を落とすのは正しい
+- 外周の範囲は x −75〜9,175 / y −75〜5,990。壁芯の外接矩形から各辺に厚さの半分だけ外へ出た値になる
 
 **Step 5: Commit** → `git commit -m "feat: 帯から壁・外形・外壁判定を組み立てる"`
 

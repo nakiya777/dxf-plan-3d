@@ -19,7 +19,7 @@
 - コミットは 1 タスク 1 回以上。メッセージは `feat|test|chore: 日本語の要約` とし、末尾に次のトレーラーを付ける
 
 ```
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 ```
 
 - コード内のコメントと docstring は日本語。変数名は英語
@@ -158,7 +158,7 @@ npm run dev
 git add -A
 git commit -m "chore: Vite + React + three.js の雛形と型定義
 
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---

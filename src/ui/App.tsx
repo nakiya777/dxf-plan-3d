@@ -5,6 +5,7 @@ import { Viewer } from '../viewer/scene';
 import { Panel } from './Panel';
 import { RectDraw } from './RectDraw';
 import { SelectView } from './SelectView';
+import { installTestHooks } from './testHooks';
 import './app.css';
 
 /** 全画面の 3D キャンバス、右上のパネル、必要なときだけ重なる 2D 選択ビューと矩形描画のヘッダ（設計書 §6.1） */
@@ -26,6 +27,8 @@ export function App() {
     };
     const unsubscribe = store.subscribe(sync);
     sync();
+    // E2E 用フック（window.__app）。UI からは使わない
+    installTestHooks(viewer);
     // StrictMode の二重マウントに備え、必ず WebGL コンテキストを捨てる
     return () => { unsubscribe(); rectDraw.dispose(); handles.dispose(); viewer.dispose(); };
   }, []);

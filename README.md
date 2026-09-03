@@ -20,7 +20,7 @@ Node 22 を前提にしている。
 |---|---|
 | `npm ci` | 依存の導入。`package-lock.json` に固定した版をそのまま入れる（依存は exact 固定。幾何ライブラリの挙動が版で変わると認識結果が変わるため） |
 | `npm run dev` | 開発サーバー。`http://localhost:5173` **固定**（`vite.config.ts` の `strictPort`）。5173 が埋まっていると起動に失敗する。別ポートへ逃がさない理由は、E2E が `localhost:5173` を決め打ちしているため、逃がすと別のアプリに繋いで試験してしまうから |
-| `npm test` | 単体テスト（vitest）。191 件 |
+| `npm test` | 単体テスト（vitest）。193 件 |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run build` | 型検査のあと `dist/` に本番ビルドを出す |
 | `npm run e2e` | E2E（Playwright、7 件）。初回だけ `npx playwright install chromium` が要る。開発サーバーは Playwright が自分で起こすので、先に `npm run dev` を打つ必要はない（動いていればそれを使う）。CI では `reuseExistingServer` を無効にしてあり、必ず自分で起こす |
@@ -28,7 +28,7 @@ Node 22 を前提にしている。
 
 ## 実図面フィクスチャについて
 
-`fixtures/forest-s/`（実在する住宅の図面）は権利上の配慮で公開リポジトリに含めず、ローカルにだけ置く。無くてもテストとビルドは通り、実図面を使う試験だけが **失敗ではなく skip** になる（単体 193 件中 13 件、E2E 7 件中 1 件）。判定は `src/recognize/testing.ts` の `hasForestS()`（`existsSync`）で、実図面がある環境では従来どおり全件走る。
+`fixtures/forest-s/`（実在する住宅の図面）は権利上の配慮で公開リポジトリに含めず、ローカルにだけ置く。無くてもテストとビルドは通る。実図面を使う試験は **skip** として数えられ、失敗にはならない（単体 193 件中 13 件、E2E 7 件中 1 件）。判定は `src/recognize/testing.ts` の `hasForestS()`（`existsSync`）で、実図面がある環境では従来どおり全件走る。
 
 ## 使い方
 
@@ -95,12 +95,12 @@ Node 22 を前提にしている。
 | 文書 | 内容 |
 |---|---|
 | [`specs/001-dxf-massing-mvp/design.md`](specs/001-dxf-massing-mvp/design.md) | 設計書（正本）。要件・データモデル・認識ロジック・3D 生成・テスト・未確定事項 |
-| `specs/001-dxf-massing-mvp/design.html` | 設計書の HTML 版。突き合わせ表を付録に含み、画像を埋め込んだ単一ファイル。`build-html.py` で MD から生成する（HTML を直接編集しない）。同じ内容を Claude の Artifact にも公開済み（非公開リンク、2026-09-03）: https://claude.ai/code/artifact/dcfa11dd-1c68-4fe3-8061-7bbd248d226f |
+| `specs/001-dxf-massing-mvp/design.html` | 設計書の HTML 版。突き合わせ表を付録に含み、画像を埋め込んだ単一ファイル。`build-html.py` で MD から生成する（HTML を直接編集しない）。**動画のフレームと実図面の描画を埋め込むため公開リポジトリには含めない**（ローカルで生成する）。同じ内容を Claude の Artifact にも公開済み（非公開リンク、2026-09-03）: https://claude.ai/code/artifact/dcfa11dd-1c68-4fe3-8061-7bbd248d226f |
 | [`specs/001-dxf-massing-mvp/video-parity.md`](specs/001-dxf-massing-mvp/video-parity.md) | 動画の各秒と設計書の対応表。受け入れ試験の台本を兼ねる |
 | [`specs/001-dxf-massing-mvp/implementation-plan.md`](specs/001-dxf-massing-mvp/implementation-plan.md) | 実装計画。17 タスクをテスト先行の手順に分解。タスクごとに実装・仕様適合レビュー・品質レビューを回して進める。**着手時の下書きなので、コードが実装と食い違う節がある。実装済みの箇所は常にコミット済みのファイルが正** |
-| `specs/001-dxf-massing-mvp/reference/` | 参考動画と読み取り済みフレーム（1 秒刻みのタイル画像、UI パネル拡大など） |
-| `specs/001-dxf-massing-mvp/prototype/` | 壁認識ルールの否定実験（Python + ezdxf）。設計書 §7.0 の根拠。実装には使わない |
-| `fixtures/forest-s/` | マスター提供の実図面 DXF 一式（2×4 キットハウス「フォレスト S」、Jw_cad 形式 R12・Shift_JIS）。主フィクスチャは `平面立面図.dxf` |
+| `specs/001-dxf-massing-mvp/reference/` | 参考動画と読み取り済みフレーム（1 秒刻みのタイル画像、UI パネル拡大など）。**公開リポジトリには含めない**（別 PC で録画されたもの）。設計書の図はこのフォルダを参照しているので、公開版では画像が表示されない |
+| `specs/001-dxf-massing-mvp/prototype/` | 壁認識ルールの否定実験（Python + ezdxf）。設計書 §7.0 の根拠。実装には使わない。**描画画像（PNG）は実図面を写しているため公開しない**。スクリプトは含める |
+| `fixtures/forest-s/` | マスター提供の実図面 DXF 一式（2×4 キットハウス「フォレスト S」、Jw_cad 形式 R12・Shift_JIS）。主フィクスチャは `平面立面図.dxf`。**公開リポジトリには含めない**（権利上の配慮。上の「実図面フィクスチャについて」参照） |
 | `fixtures/sample-house*.dxf` | 自作フィクスチャ（動画相当のサンプル住宅。1 階と 2 階を X 方向に 12,000 mm 離して横並び）。通り芯バブルと直階段を含む。UTF-8 版・Shift_JIS 版（AC1015 + ANSI_932）・壁芯レイヤー付き版の 3 変種。`npm run make-fixtures` で `scripts/make-sample-dxf.ts` から再生成する生成物だが、テストの再現性のためコミットしている。生成ロジックを変えたら再生成してコミットすること（`src/dxf/fixtures.test.ts` が両者の一致を検査する） |
 
 ## 参考動画について

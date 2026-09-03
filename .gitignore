@@ -4,3 +4,11 @@ playwright-report/
 test-results/
 .vite/
 *.local
+
+# 公開リポジトリに含めないもの（ローカルにだけ置く）
+# 参考動画とそのフレーム（別 PC で録画されたもの）、実図面（マスター提供の 2010 年キットハウス図面）、
+# それらを埋め込んだ HTML と描画画像。README「実図面フィクスチャについて」参照
+specs/001-dxf-massing-mvp/reference/
+specs/001-dxf-massing-mvp/prototype/*.png
+specs/001-dxf-massing-mvp/design.html
+fixtures/forest-s/

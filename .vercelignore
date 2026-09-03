@@ -1,0 +1,10 @@
+# Vercel にアップロードしないもの（ビルドに不要）
+specs
+e2e
+fixtures/forest-s
+test-results
+playwright-report
+dist
+node_modules
+.claude
+.playwright-mcp

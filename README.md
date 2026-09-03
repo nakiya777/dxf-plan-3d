@@ -14,6 +14,12 @@ DXF の平面図を読み込み、壁（開口部・階段付き）を立ち上�
 
 公開先: https://github.com/nakiya777/dxf-plan-3d （公開、既定ブランチ master）
 
+動作デモ: https://dxf-plan-3d.vercel.app/ （Vercel、本番エイリアス。誰でも開ける。デプロイ固有の `*-nakiya777s-projects.vercel.app` は Vercel Authentication で保護されているため、共有にはこの本番 URL を使う）
+
+- デプロイは Vercel CLI から手動（`npx vercel@latest deploy --prod --yes`）。GitHub 連携は Vercel 側に GitHub App が未導入のため未設定で、push しても自動デプロイはされない。連携するなら https://github.com/apps/vercel を nakiya777 に導入してから Vercel のプロジェクト設定で Git を接続する
+- アップロード対象は `.vercelignore` で絞る（`specs` `e2e` `fixtures/forest-s` など）。`scripts` は除外しない（`src/dxf/fixtures.test.ts` が import しており、型検査で落ちる。2026-09-04 に一度これで失敗した）
+- ビルドは Vercel が `vite` を自動検出し `npm run build`（型検査 + ビルド）を実行する
+
 ## 起動手順
 
 Node 22 を前提にしている。

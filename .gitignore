@@ -12,3 +12,5 @@ specs/001-dxf-massing-mvp/reference/
 specs/001-dxf-massing-mvp/prototype/*.png
 specs/001-dxf-massing-mvp/design.html
 fixtures/forest-s/
+
+.vercel

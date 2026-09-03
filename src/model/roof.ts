@@ -17,7 +17,8 @@ export interface RoofGeom {
 
 /**
  * 棟が X 方向の局所系で解き、`axis` が y なら x⇔y を入れ替えて返す。
- * `rect` は最上階の外壁芯の外接矩形（建物座標）、`He` は最上階の topZ
+ * `rect` は最上階の外壁芯の外接矩形（建物座標）、`He` は最上階の topZ。
+ * Phase 2 の L 字平面は、矩形ブロックの列を受けてブロックごとの `planes` を連結し `heightAt` を min 合成する形で入る
  */
 export function solveRoof(roof: Roof, rect: Box2, He: number): RoofGeom {
   const swap = roof.axis === 'y';
@@ -27,7 +28,7 @@ export function solveRoof(roof: Roof, rect: Box2, He: number): RoofGeom {
   const v = roof.verge;
   const [x0, x1, y0, y1] = [local.minX, local.maxX, local.minY, local.maxY];
 
-  // 棟の横位置と棟高。ridgeOffset ≠ 0 のときは遠い側の幅で決め、両主面とも勾配 p のまま [暫定]
+  // 棟の横位置と棟高。ridgeOffset ≠ 0 のときは遠い側の幅で決め、両主面とも勾配 p のまま
   const yr = (y0 + y1) / 2 + roof.ridgeOffset;
   const ridgeZ = He + p * Math.max(yr - y0, y1 - yr);
   const mainHeight = (y: number) => ridgeZ - p * Math.abs(y - yr);
@@ -41,15 +42,19 @@ export function solveRoof(roof: Roof, rect: Box2, He: number): RoofGeom {
   const ya = y0 - e;
   const yb = y1 + e;
 
-  // 寄棟端の面: 棟端点から軒先の角へ直線的に下がる。ridgeOffset ≠ 0 で両軒先の高さが違うときは低い方に合わせる [暫定]
-  const eaveZ = Math.min(mainHeight(ya), mainHeight(yb));
-  const endHeight = (x: number): number => {
-    let h = Infinity;
-    if (!gable[0] && x < xr0) h = Math.min(h, ridgeZ - ((ridgeZ - eaveZ) * (xr0 - x)) / (xr0 - xa));
-    if (!gable[1] && x > xr1) h = Math.min(h, ridgeZ - ((ridgeZ - eaveZ) * (x - xr1)) / (xb - xr1));
-    return h;
+  // 寄棟端の面: 軒先の角 2 点 (xEave, ya), (xEave, yb) と棟端点 (xRidge, yr) を通る平面。
+  // ridgeOffset ≠ 0 で両軒先の高さが違っても 3 点を通る平面は一意に決まり、planes の三角形と heightAt が一致する
+  const endPlane = (xEave: number, xRidge: number) => {
+    const za = mainHeight(ya);
+    const zb = mainHeight(yb);
+    const slopeY = (zb - za) / (yb - ya);
+    const slopeX = (za - ridgeZ - slopeY * (ya - yr)) / (xEave - xRidge);
+    return (x: number, y: number) => ridgeZ + slopeX * (x - xRidge) + slopeY * (y - yr);
   };
-  const heightLocal = (x: number, y: number) => Math.min(mainHeight(y), endHeight(x));
+  const endPlanes = [gable[0] ? undefined : endPlane(xa, xr0), gable[1] ? undefined : endPlane(xb, xr1)];
+  // 屋根の上面は主面 2 枚と端面の下側の包絡（各面は棟端点を共有し、隅棟の内側では端面が主面より高い）
+  const heightLocal = (x: number, y: number) =>
+    endPlanes.reduce((h, plane) => (plane ? Math.min(h, plane(x, y)) : h), mainHeight(y));
   const P = (x: number, y: number): Vec3 => ({ x, y, z: heightLocal(x, y) });
 
   const planes: Vec3[][] = [
@@ -75,6 +80,3 @@ export function solveRoof(roof: Roof, rect: Box2, He: number): RoofGeom {
     heightAt: (x, y) => (swap ? heightLocal(y, x) : heightLocal(x, y)),
   };
 }
-
-/** 屋根上面の高さ h(x, y)（建物座標） */
-export const roofHeightAt = (g: RoofGeom, x: number, y: number): number => g.heightAt(x, y);

@@ -11,7 +11,8 @@ const RIDGE_OFFSET_MARGIN = 300;
 /** 通り芯ラベルが無いときの外壁重ね合わせで「同じ位置」とみなす許容差 */
 const OVERLAY_TOLERANCE = 20;
 
-const snap = (value: number, step: number) => Math.round(value / step) * step;
+/** step 刻みに丸める。`|| 0` は −0 を 0 にする（toEqual で −0 と 0 は別物） */
+const snap = (value: number, step: number) => Math.round(value / step) * step || 0;
 
 /** 空の建物。1 階の床高さは GL + 550（§4.3、Q4 回答） */
 export function createBuilding(): BuildingModel {
@@ -33,7 +34,8 @@ export function centerlineRect(plan: PlanModel): Box2 {
   };
 }
 
-const shift = (b: Box2, o: Vec2): Box2 => ({ minX: b.minX + o.x, minY: b.minY + o.y, maxX: b.maxX + o.x, maxY: b.maxY + o.y });
+const shift = (b: Box2, o: Vec2): Box2 =>
+  ({ minX: b.minX + o.x, minY: b.minY + o.y, maxX: b.maxX + o.x, maxY: b.maxY + o.y });
 const center = (b: Box2): Vec2 => ({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
 
 interface Segment { a: Vec2; b: Vec2 }
@@ -43,7 +45,9 @@ const isXAxis = (axis: Segment) => Math.abs(axis.a.x - axis.b.x) < Math.abs(axis
 
 /** 外壁芯を建物座標へ平行移動したもの */
 const exteriorSegments = (walls: Wall[], offset: Vec2): Segment[] =>
-  walls.filter((w) => w.exterior).map((w) => ({ a: { x: w.a.x + offset.x, y: w.a.y + offset.y }, b: { x: w.b.x + offset.x, y: w.b.y + offset.y } }));
+  walls
+    .filter((w) => w.exterior)
+    .map((w) => ({ a: { x: w.a.x + offset.x, y: w.a.y + offset.y }, b: { x: w.b.x + offset.x, y: w.b.y + offset.y } }));
 
 /** その軸に直交する（軸の座標が一定の）壁 */
 const perpendicularTo = (axis: 'x' | 'y') => (s: Segment) => Math.abs(s.a[axis] - s.b[axis]) < 1;
@@ -54,36 +58,49 @@ function overlapLength(l: Segment, u: Segment, shiftBy: Vec2): number {
     if (!perpendicularTo(axis)(l) || !perpendicularTo(axis)(u)) continue;
     if (Math.abs(l.a[axis] - (u.a[axis] + shiftBy[axis])) > OVERLAY_TOLERANCE) return 0;
     const other = axis === 'x' ? 'y' : 'x';
+    const lMin = Math.min(l.a[other], l.b[other]);
+    const lMax = Math.max(l.a[other], l.b[other]);
     const uMin = Math.min(u.a[other], u.b[other]) + shiftBy[other];
     const uMax = Math.max(u.a[other], u.b[other]) + shiftBy[other];
-    return Math.max(0, Math.min(Math.max(l.a[other], l.b[other]), uMax) - Math.max(Math.min(l.a[other], l.b[other]), uMin));
+    return Math.max(0, Math.min(lMax, uMax) - Math.max(lMin, uMin));
   }
   return 0;
 }
 
 /**
  * 外壁の重ね合わせ（§8.5 手順 2）。候補の組 (dx, dy) を総当たりで採点し、重なり長の合計が最大の組を返す。
- * 各軸の候補は「外接矩形の中心合わせ」＋「その軸に直交する外壁どうしの位置差」。通り芯で決まった軸は `fixed` の値 1 つに固定する。
+ * 各軸の候補は「外接矩形の中心合わせ」＋「その軸に直交する外壁どうしの位置差」。
+ * 通り芯で決まった軸は `fixed` の値 1 つに固定する。
  * 重なり長を (dx, dy) 適用後の座標で測るので、両階の描画位置が離れていても採点がずれない。
  * 同点（矩形どうしでは西壁を東壁に重ねても同じ重なり長になる）は中心合わせに近い組を取る [推定]
  */
 function overlayFloors(lower: Segment[], upper: Segment[], lowerRect: Box2, upperRect: Box2, fixed: Partial<Vec2>): Vec2 {
-  const centered: Vec2 = { x: center(lowerRect).x - center(upperRect).x, y: center(lowerRect).y - center(upperRect).y };
+  const centered: Vec2 = {
+    x: center(lowerRect).x - center(upperRect).x,
+    y: center(lowerRect).y - center(upperRect).y,
+  };
   const candidatesAlong = (axis: 'x' | 'y'): number[] => {
     const fixedValue = fixed[axis];
     if (fixedValue !== undefined) return [fixedValue];
     const set = new Set<number>([centered[axis]]);
-    for (const l of lower.filter(perpendicularTo(axis))) for (const u of upper.filter(perpendicularTo(axis))) set.add(l.a[axis] - u.a[axis]);
+    for (const l of lower.filter(perpendicularTo(axis))) {
+      for (const u of upper.filter(perpendicularTo(axis))) set.add(l.a[axis] - u.a[axis]);
+    }
     return [...set];
   };
   const distance = (d: Vec2) => Math.hypot(d.x - centered.x, d.y - centered.y);
   let best: Vec2 = { x: fixed.x ?? centered.x, y: fixed.y ?? centered.y };
   let bestScore = -1;
-  for (const dx of candidatesAlong('x')) for (const dy of candidatesAlong('y')) {
-    const d = { x: dx, y: dy };
-    let score = 0;
-    for (const l of lower) for (const u of upper) score += overlapLength(l, u, d);
-    if (score > bestScore || (score === bestScore && distance(d) < distance(best))) { bestScore = score; best = d; }
+  for (const dx of candidatesAlong('x')) {
+    for (const dy of candidatesAlong('y')) {
+      const d = { x: dx, y: dy };
+      let score = 0;
+      for (const l of lower) for (const u of upper) score += overlapLength(l, u, d);
+      if (score > bestScore || (score === bestScore && distance(d) < distance(best))) {
+        bestScore = score;
+        best = d;
+      }
+    }
   }
   return best;
 }
@@ -125,7 +142,14 @@ export function addFloor(model: BuildingModel, plan: PlanModel): BuildingModel {
   const c = center(centerlineRect(plan));
   const offset: Vec2 = below ? alignToBelow(below, plan) : { x: -c.x, y: -c.y };
   const baseZ = below ? below.topZ + model.slabThickness : model.floor1Level;
-  const floor: FloorBlock = { id: nextFloorId(model.floors), level: model.floors.length + 1, plan, offset, baseZ, topZ: baseZ };
+  const floor: FloorBlock = {
+    id: nextFloorId(model.floors),
+    level: model.floors.length + 1,
+    plan,
+    offset,
+    baseZ,
+    topZ: baseZ,
+  };
   return { ...model, floors: [...model.floors, floor] };
 }
 
@@ -139,9 +163,13 @@ function restack(model: BuildingModel): BuildingModel {
   return { ...model, floors };
 }
 
+/** 指定した階だけを書き換える */
+const updateFloor = (model: BuildingModel, floorId: string, patch: (f: FloorBlock) => FloorBlock): BuildingModel =>
+  ({ ...model, floors: model.floors.map((f) => (f.id === floorId ? patch(f) : f)) });
+
 /** 壁上端を動かす（青ハンドルの高さモード）。50 mm スナップ、baseZ 未満にはしない。上の階は押し上がる */
 export function setTopZ(model: BuildingModel, floorId: string, z: number): BuildingModel {
-  return restack({ ...model, floors: model.floors.map((f) => (f.id === floorId ? { ...f, topZ: Math.max(f.baseZ, snap(z, SNAP_Z)) } : f)) });
+  return restack(updateFloor(model, floorId, (f) => ({ ...f, topZ: Math.max(f.baseZ, snap(z, SNAP_Z)) })));
 }
 
 /** 1 階の床高さ（基礎高さ）。全階が一緒に動く */
@@ -151,10 +179,10 @@ export function setFloor1Level(model: BuildingModel, level: number): BuildingMod
 
 /** 横移動（青ハンドルの横移動モード）。10 mm スナップ。上の階は一緒に動かさない（§6.3 [暫定]） */
 export function moveFloor(model: BuildingModel, floorId: string, dx: number, dy: number): BuildingModel {
-  return {
-    ...model,
-    floors: model.floors.map((f) => (f.id === floorId ? { ...f, offset: { x: f.offset.x + snap(dx, SNAP_XY), y: f.offset.y + snap(dy, SNAP_XY) } } : f)),
-  };
+  return updateFloor(model, floorId, (f) => ({
+    ...f,
+    offset: { x: f.offset.x + snap(dx, SNAP_XY), y: f.offset.y + snap(dy, SNAP_XY) },
+  }));
 }
 
 /** 最上階の外壁芯の外接矩形（建物座標）。屋根の基準 */
@@ -191,8 +219,11 @@ export function addRoof(model: BuildingModel): BuildingModel {
 
 export const removeRoof = (model: BuildingModel): BuildingModel => ({ ...model, roof: undefined });
 
-/** スライダーの即時更新（勾配・軒の出・ケラバの出など）。屋根が無ければ何もしない */
-export const setRoofParam = (model: BuildingModel, patch: Partial<Roof>): BuildingModel =>
+/** スライダーで変えられる寸法。位置系（axis / inset / ridgeOffset）は専用の操作関数を通す */
+export type RoofSliderParams = Partial<Pick<Roof, 'pitchSun' | 'eave' | 'verge' | 'thickness'>>;
+
+/** スライダーの即時更新（勾配・軒の出・ケラバの出・屋根厚）。屋根が無ければ何もしない */
+export const setRoofParam = (model: BuildingModel, patch: RoofSliderParams): BuildingModel =>
   model.roof ? { ...model, roof: { ...model.roof, ...patch } } : model;
 
 /** 紫回転矢印: 棟を x⇔y に切り替え、inset は新しい寸法の既定に戻す。棟の平行移動も戻す */
@@ -222,5 +253,6 @@ export function setRidgeOffset(model: BuildingModel, value: number): BuildingMod
   if (!model.roof) return model;
   const { W } = roofSpan(topFloorRect(model), model.roof.axis);
   const limit = Math.max(0, W / 2 - RIDGE_OFFSET_MARGIN);
-  return { ...model, roof: { ...model.roof, ridgeOffset: Math.max(-limit, Math.min(limit, snap(value, SNAP_XY))) } };
+  const ridgeOffset = Math.max(-limit, Math.min(limit, snap(value, SNAP_XY)));
+  return { ...model, roof: { ...model.roof, ridgeOffset } };
 }

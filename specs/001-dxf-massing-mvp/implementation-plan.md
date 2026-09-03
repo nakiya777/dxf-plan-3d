@@ -1812,6 +1812,17 @@ export const roofHeightAt = (g: RoofGeom, x: number, y: number) => g.heightAt(x,
 
 設計書 §4.3 の座標変換はここ（`src/geometry/coords.ts`）の 1 か所に置く。ジオメトリはすべて**モデル座標（mm・Z 上）で組み立ててから** `MODEL_TO_SCENE` を 1 回掛ける。設計書 §4.3 も同じ場所を指している（2026-09-03 に同期済み）。
 
+**先行検証の結果（2026-09-03 に Node で実機確認済み）**
+
+| 確かめたこと | 結果 |
+|---|---|
+| `Shape` + `Path` の穴 2 個を `ExtrudeGeometry` で押し出す | 動く。頂点 144、範囲は x 0〜5,000 / y 0〜3,000 / z 0〜150 で意図どおり。**穴は `new Path(points)` で作る**（`Shape` ではない） |
+| 切り欠き（天端まで抜けた開口を外形に含める） | 動く。頂点 72 |
+| `MODEL_TO_SCENE` 行列 | (9100, 5915, 3350) mm → (9.1, 3.35, −5.915) で設計書 §4.3 のとおり |
+| `ShapeUtils.triangulateShape(contour, holes)` | `[[2,3,0],[0,1,2]]` のように頂点添字の三つ組を返す。屋根の面に使える |
+| `EdgesGeometry(g, 20)` | 動く。穴 2 個の壁で線分 40 本 |
+| `ExtrudeGeometry` の index | **付かない**（`getIndex()` が null）。`mergeGeometries` は index 有無の両方を扱う必要がある |
+
 **Step 1: 失敗するテスト（壁の輪郭）**
 
 `src/geometry/wallShape.test.ts`:

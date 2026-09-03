@@ -13,7 +13,7 @@ import { fromRhoS, toSeg } from './geom';
  *
  * 総延長を測るのは入れ子をまとめる**前**の帯（`candidates`）。設計書 §7.0 の実測表
  * （壁 142.8 m / 建具 33.0 m / 設備 4.7 m）がその状態の値で、30% はそれに合わせた閾値。
- * まとめた後の `walls` で測ると、仕上げ線 4 本の壁だけが 6 分の 1 に圧縮されて建具が 61% に上がり、
+ * まとめた後の `wallBands` で測ると、仕上げ線 4 本の壁だけが 6 分の 1 に圧縮されて建具が 61% に上がり、
  * 建具レイヤーが壁になる。`Band[]` ではなく `BandResult` を受けるのは、この取り違えを型で止めるため
  */
 export function decideWallLayers(result: BandResult): Set<string> {
@@ -41,7 +41,8 @@ const rhoCenter = (r: Run) => (r.rhoLo + r.rhoHi) / 2;
  * 同じ向き・同じ壁芯に乗る Run を、隙間 `maxGap` 以内でつなぐ。
  *
  * 壁芯のまとめ方は、丸めた値をキーにすると境界でグループが割れるので、ρ の昇順に並べて
- * 「前との差が許容内なら同じ壁芯」と数珠つなぎにする
+ * 「グループ先頭との差が許容内なら同じ壁芯」とまとめる。比較相手を直前の要素にすると
+ * 数珠つなぎで幅に上限が無くなり、15 mm ずつ 4 段ずれた区間で壁厚が 150 → 195 mm に太る
  */
 function joinCollinear(runs: Run[], maxGap: number): Run[] {
   const byTheta = new Map<number, Run[]>();
@@ -57,7 +58,7 @@ function joinCollinear(runs: Run[], maxGap: number): Run[] {
     const lines: Run[][] = [];
     for (const r of sorted) {
       const last = lines[lines.length - 1];
-      if (last && rhoCenter(r) - rhoCenter(last[last.length - 1]) <= CFG.collinearRhoTol) last.push(r);
+      if (last && rhoCenter(r) - rhoCenter(last[0]) <= CFG.collinearRhoTol) last.push(r);
       else lines.push([r]);
     }
 
@@ -106,11 +107,11 @@ export function bandsToWalls(bands: Band[], wallLayers: Set<string>): Wall[] {
   return joinCollinear(runs, CFG.wallMergeGap).map((r, i) => runToWall(r, `w${i}`));
 }
 
-/** 壁の矩形（4 隅）。角を閉じるため両端を厚さの半分だけ延ばす */
+/** 壁の矩形（4 隅）。角を閉じるため両端を厚さの半分だけ延ばす。壁は帯の重なり 300 mm 以上から作るので長さ 0 は来ない */
 export function wallRect(w: Wall): Vec2[] {
   const dx = w.b.x - w.a.x;
   const dy = w.b.y - w.a.y;
-  const len = Math.hypot(dx, dy) || 1;
+  const len = Math.hypot(dx, dy);
   const ux = dx / len;
   const uy = dy / len;
   const half = w.thickness / 2;
@@ -145,7 +146,9 @@ const ringArea = (r: Ring) =>
  * 開口ではなく建物の凹み（サンプルのテラス側の U 字は 2,830 mm）なので、つながずに残す。
  *
  * それでも輪にならない図面では、和集合は壁の材料分の細い環にしかならない。その場合は
- * 全壁矩形の外接矩形に落とす（外形が無いと屋根も外壁判定も作れないので、落とさず代用する）
+ * 全壁矩形の外接矩形に落とす（外形が無いと屋根も外壁判定も作れないので、落とさず代用する）。
+ *
+ * 返すのは面積が最大の環の外周だけ。その環の穴（部屋）と、離れて建つ別の棟は捨てる
  */
 export function computeOutline(walls: Wall[]): Polygon {
   if (walls.length === 0) return [];
@@ -172,7 +175,11 @@ export function computeOutline(walls: Wall[]): Polygon {
   return outer.slice(0, -1).map(([x, y]) => ({ x, y }));
 }
 
-/** 点が多角形の内側か（交差数判定） */
+/**
+ * 点が多角形の内側か（交差数判定）。
+ * 境界上の点は半開で扱う: 軸平行の矩形なら、下辺（y が最小の辺）と左辺の上は内側、上辺と右辺の上は外側。
+ * 頂点も同じ規則で、左下は内側、右上は外側。多角形の向き（時計回りか否か）には依らない
+ */
 export function pointInPolygon(p: Vec2, poly: Polygon): boolean {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -186,7 +193,8 @@ export function pointInPolygon(p: Vec2, poly: Polygon): boolean {
 /**
  * 外壁の判定（設計書 §7.2 手順 5）。
  * 壁芯の中点から法線方向に「厚さ/2 + 余白」だけ離した 2 点のどちらかが外形の外なら外壁。
- * 外形は壁面から厚さの半分だけ外にあるので、外壁ならその外側の点がちょうど縁を越える
+ * 外形は壁面から厚さの半分だけ外にあるので、外壁ならその外側の点がちょうど縁を越える。
+ * 探る距離はその壁自身の厚さが基準で、外形を作った壁の厚さとは独立
  */
 export function markExterior(walls: Wall[], outline: Polygon): Wall[] {
   return walls.map((w) => {
@@ -194,7 +202,7 @@ export function markExterior(walls: Wall[], outline: Polygon): Wall[] {
     const my = (w.a.y + w.b.y) / 2;
     const dx = w.b.x - w.a.x;
     const dy = w.b.y - w.a.y;
-    const len = Math.hypot(dx, dy) || 1;
+    const len = Math.hypot(dx, dy);
     const n = { x: -dy / len, y: dx / len };
     const d = w.thickness / 2 + CFG.exteriorProbeMargin;
     const exterior =
@@ -216,5 +224,5 @@ export function bboxOfPoints(points: Vec2[]): Box2 {
   );
 }
 
-/** 外壁芯の外接矩形（屋根の基準。設計書 §8.4） */
+/** 外壁芯の外接矩形（屋根の基準。設計書 §8.4）。空配列を渡すと min が +∞・max が −∞ の反転した box が返る。壁が 0 本のときの扱いは呼び出し側の責務 */
 export const centerlineBBox = (walls: Wall[]): Box2 => bboxOfPoints(walls.flatMap((w) => [w.a, w.b]));

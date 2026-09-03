@@ -34,7 +34,11 @@ export const dot = (p: Vec2, q: Vec2) => p.x * q.x + p.y * q.y;
 /**
  * 角度を [0, 180) に折り畳み、刻みに丸める。
  * 線分に向きの区別は要らないので 180° 周期にする。丸めた結果が 180 になったら 0 に戻す
- * （右向きの水平線と左向きの水平線を同じグループに入れるため）
+ * （右向きの水平線と左向きの水平線を同じグループに入れるため）。
+ *
+ * 制限: 丸めた値が等しい線だけを平行と見なすので、刻みの境界をまたぐ 2 本（例: 0.2° と 0.3°）は
+ * 差が刻みより小さくても平行にならない。継ぎ目の 0 と 180−step も別グループ（−0.1° と −0.3° は
+ * 0 と 179.5 に分かれる）。直交図面では実害が小さいので、窓で対を作る方式には変えていない
  */
 export function foldTheta(deg: number): number {
   const step = CFG.thetaStepDeg;
@@ -82,4 +86,3 @@ export const fromRhoS = (theta: number, rho: number, s: number): Vec2 => {
 export const overlapLen = (p: { s0: number; s1: number }, q: { s0: number; s1: number }) =>
   Math.min(p.s1, q.s1) - Math.max(p.s0, q.s0);
 
-export const length = (s: Seg) => s.s1 - s.s0;

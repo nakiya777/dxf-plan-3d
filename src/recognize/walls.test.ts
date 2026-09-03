@@ -1,8 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { loadDxf } from '../dxf';
 import { extractBands } from './bands';
 import { toSegments } from './geom';
+import { forest1F, line } from './testing';
 import {
   bandsToWalls,
   bboxOfPoints,
@@ -10,22 +9,9 @@ import {
   computeOutline,
   decideWallLayers,
   markExterior,
+  pointInPolygon,
 } from './walls';
 import type { PlanEntity, Wall } from '../model/types';
-
-const forest1F = () => {
-  const plan = loadDxf(new Uint8Array(readFileSync('fixtures/forest-s/平面立面図.dxf')).buffer, 'forest');
-  return plan.entities.filter(
-    (e) => e.kind === 'line' && e.a.x >= 5500 && e.a.x <= 19800 && e.a.y >= 28800 && e.a.y <= 39800,
-  );
-};
-
-const line = (layer: string, x1: number, y1: number, x2: number, y2: number): PlanEntity => ({
-  kind: 'line',
-  layer,
-  a: { x: x1, y: y1 },
-  b: { x: x2, y: y2 },
-});
 
 /** 9,100 × 5,915 の壁芯・厚さ 150 の閉じた矩形。polygon-clipping の実測に使った形 */
 const closedRect = (): Wall[] => {
@@ -73,10 +59,10 @@ describe('壁の組み立て', () => {
 
   it('forest-s 1 階: 外壁芯の外接矩形が 9,100 × 5,915（±30）', () => {
     const r = extractBands(toSegments(forest1F()));
-    const walls = bandsToWalls(r.walls, decideWallLayers(r));
+    const walls = bandsToWalls(r.wallBands, decideWallLayers(r));
     const box = centerlineBBox(markExterior(walls, computeOutline(walls)).filter((w) => w.exterior));
-    expect(box.maxX - box.minX).toBeCloseTo(9100, -1.5);
-    expect(box.maxY - box.minY).toBeCloseTo(5915, -1.5);
+    expect(Math.abs(box.maxX - box.minX - 9100)).toBeLessThan(30);
+    expect(Math.abs(box.maxY - box.minY - 5915)).toBeLessThan(30);
   });
 
   it('forest-s 1 階: 外周が閉じないので外形は bbox に落ち、内壁は外壁にしない', () => {
@@ -85,7 +71,7 @@ describe('壁の組み立て', () => {
     // 和集合の最大の環は面積 8.35e6 mm²（全壁矩形 bbox の 15%）の細い帯にしかならないので、
     // これを外形に採ると内壁までほぼ全部が外壁になる（34 本中 31 本）
     const r = extractBands(toSegments(forest1F()));
-    const walls = bandsToWalls(r.walls, decideWallLayers(r));
+    const walls = bandsToWalls(r.wallBands, decideWallLayers(r));
     const outline = computeOutline(walls);
     expect(outline).toHaveLength(4);
     const exterior = markExterior(walls, outline).filter((w) => w.exterior);
@@ -95,7 +81,7 @@ describe('壁の組み立て', () => {
 
   it('forest-s 1 階: 壁は 34 本で、厚さはほぼ 150 mm', () => {
     const r = extractBands(toSegments(forest1F()));
-    const walls = bandsToWalls(r.walls, decideWallLayers(r));
+    const walls = bandsToWalls(r.wallBands, decideWallLayers(r));
     expect(walls).toHaveLength(34);
     expect(walls.filter((w) => Math.abs(w.thickness - 150) < 1)).toHaveLength(32);
   });
@@ -170,6 +156,34 @@ describe('外形', () => {
   });
 });
 
+describe('pointInPolygon の境界規則', () => {
+  const square: Wall['a'][] = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+  ];
+  const reversed = [...square].reverse();
+
+  it('辺の上は半開: 下辺と左辺は内側、上辺と右辺は外側', () => {
+    for (const poly of [square, reversed]) {
+      expect(pointInPolygon({ x: 5, y: 0 }, poly)).toBe(true); // 下辺
+      expect(pointInPolygon({ x: 0, y: 5 }, poly)).toBe(true); // 左辺
+      expect(pointInPolygon({ x: 5, y: 10 }, poly)).toBe(false); // 上辺
+      expect(pointInPolygon({ x: 10, y: 5 }, poly)).toBe(false); // 右辺
+    }
+  });
+
+  it('頂点の上も同じ規則: 左下は内側、右上は外側。内外の通常点も確認', () => {
+    for (const poly of [square, reversed]) {
+      expect(pointInPolygon({ x: 0, y: 0 }, poly)).toBe(true);
+      expect(pointInPolygon({ x: 10, y: 10 }, poly)).toBe(false);
+      expect(pointInPolygon({ x: 5, y: 5 }, poly)).toBe(true);
+      expect(pointInPolygon({ x: 11, y: 5 }, poly)).toBe(false);
+    }
+  });
+});
+
 describe('外壁の判定', () => {
   it('矩形の 4 辺は外壁、内側の間仕切りは外壁でない', () => {
     const inner: Wall = { id: 'in', a: { x: 4000, y: 0 }, b: { x: 4000, y: 5915 }, thickness: 120, exterior: false };
@@ -201,7 +215,7 @@ describe('帯から壁へ', () => {
 
   it('隙間 40 mm の共線 2 帯は 1 本の壁につながる', () => {
     const r = twoRuns(40);
-    const walls = bandsToWalls(r.walls, decideWallLayers(r));
+    const walls = bandsToWalls(r.wallBands, decideWallLayers(r));
     expect(walls).toHaveLength(1);
     expect(walls[0].a.x).toBeCloseTo(0);
     expect(walls[0].b.x).toBeCloseTo(6000);
@@ -210,7 +224,7 @@ describe('帯から壁へ', () => {
 
   it('隙間 600 mm（開口）なら壁は 2 本のまま', () => {
     const r = twoRuns(600);
-    expect(bandsToWalls(r.walls, decideWallLayers(r))).toHaveLength(2);
+    expect(bandsToWalls(r.wallBands, decideWallLayers(r))).toHaveLength(2);
   });
 
   it('壁芯が丸めの境界をまたいでも共線として 1 本になる', () => {
@@ -224,17 +238,33 @@ describe('帯から壁へ', () => {
         line('壁', 3040, 90, 6000, 90),
       ]),
     );
-    expect(bandsToWalls(r.walls, decideWallLayers(r))).toHaveLength(1);
+    expect(bandsToWalls(r.wallBands, decideWallLayers(r))).toHaveLength(1);
+  });
+
+  it('壁芯が 15 mm ずつ 4 段ずれた区間は 2 本に分かれ、厚さは 165 mm で頭打ちになる', () => {
+    // 直前の要素と比べる数珠つなぎだと 1 本につながり、厚さが 0..195 = 195 mm に太る
+    const r = extractBands(
+      toSegments(
+        [0, 1, 2, 3].flatMap((k) => [
+          line('壁', k * 3040, 15 * k, k * 3040 + 3000, 15 * k),
+          line('壁', k * 3040, 150 + 15 * k, k * 3040 + 3000, 150 + 15 * k),
+        ]),
+      ),
+    );
+    expect(r.wallBands).toHaveLength(4);
+    const walls = bandsToWalls(r.wallBands, decideWallLayers(r));
+    expect(walls).toHaveLength(2);
+    expect(walls.map((w) => w.thickness)).toEqual([165, 165]);
   });
 
   it('壁芯の 10 mm のずれは共線として吸収する', () => {
     const r = twoRuns(40, 10);
-    expect(bandsToWalls(r.walls, decideWallLayers(r))).toHaveLength(1);
+    expect(bandsToWalls(r.wallBands, decideWallLayers(r))).toHaveLength(1);
   });
 
   it('壁芯が 100 mm ずれていれば共線と見なさない', () => {
     const r = twoRuns(40, 100);
-    expect(bandsToWalls(r.walls, decideWallLayers(r))).toHaveLength(2);
+    expect(bandsToWalls(r.wallBands, decideWallLayers(r))).toHaveLength(2);
   });
 
   it('壁レイヤー以外の帯は壁にしない', () => {
@@ -246,15 +276,15 @@ describe('帯から壁へ', () => {
         line('家具', 0, 3120, 1000, 3120),
       ]),
     );
-    const walls = bandsToWalls(r.walls, new Set(['壁']));
+    const walls = bandsToWalls(r.wallBands, new Set(['壁']));
     expect(walls).toHaveLength(1);
   });
 
   it('壁の id は呼び出しごとに w0 から振り直す', () => {
     const r = twoRuns(600);
     const layers = decideWallLayers(r);
-    expect(bandsToWalls(r.walls, layers).map((w) => w.id)).toEqual(['w0', 'w1']);
-    expect(bandsToWalls(r.walls, layers).map((w) => w.id)).toEqual(['w0', 'w1']);
+    expect(bandsToWalls(r.wallBands, layers).map((w) => w.id)).toEqual(['w0', 'w1']);
+    expect(bandsToWalls(r.wallBands, layers).map((w) => w.id)).toEqual(['w0', 'w1']);
   });
 });
 

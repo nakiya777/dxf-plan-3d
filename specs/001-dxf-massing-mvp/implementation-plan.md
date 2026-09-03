@@ -70,10 +70,14 @@ npm create vite@latest . -- --template react-ts
 
 ```bash
 npm install -E react react-dom three dxf-parser polygon-clipping
-npm install -E -D typescript vite @vitejs/plugin-react vitest @types/react @types/react-dom @types/three @tarikjabiri/dxf iconv-lite @playwright/test tsx
+npm install -E -D typescript vite @vitejs/plugin-react vitest @types/node @types/react @types/react-dom @types/three @tarikjabiri/dxf iconv-lite @playwright/test tsx
 ```
 
 `supply-chain-check` スキルを呼んで監査する。`.nvmrc` に `22` を書く。
+
+`iconv-lite` と `@tarikjabiri/dxf` は `scripts/make-sample-dxf.ts` でしか使わないので **devDependencies** に置く（実行時の Shift_JIS 判定はブラウザ標準の `TextDecoder`）。取り違えると 200 KB 級の不要コードがバンドルに入る。
+
+**`@types/node` を入れた副作用:** Node のグローバル型が `src/ui` `src/viewer` にも及び、`setTimeout` の戻り値が `number` ではなく `NodeJS.Timeout` になる。タイマー ID を保持する場面では `ReturnType<typeof setTimeout>` と書く（Task 15 で該当）。
 
 **Step 3: 設定ファイル**
 
@@ -165,6 +169,10 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Create: `scripts/make-sample-dxf.ts`
 - Create: `fixtures/sample-house.dxf` `fixtures/sample-house-sjis.dxf` `fixtures/sample-house-with-centerline.dxf`（生成物。コミットする）
 - Test: `src/dxf/fixtures.test.ts`
+
+**Step 0: Task 1 からの申し送りを片付ける**
+
+`package.json` の `"test"` から `--passWithNoTests` を外す。Task 1 ではテストが 1 件も無いために必要だったが、このタスクで最初のテストが入る。**このフラグを残すと、テストファイル名を打ち間違えて vitest が 0 件しか収集できなかったときに、赤くなるべき手順が緑で通る**（`vitest.config.ts` の `include` は `src/**/*.test.ts` に絞ってあるので、`.test.tsx` にした瞬間や `src/` の外に置いた瞬間に無言で 0 件になる）。Step 1 のテストと同じコミットで外す。
 
 **Step 1: 失敗するテスト**
 
@@ -2212,6 +2220,8 @@ export function makeLabel(): CSS2DObject & { setText: (t: string) => void } {
 
 **Step 3: 仮の配線で動かして見る**
 
+**`StrictMode` の二重マウントに注意する。** `src/main.tsx` は `StrictMode` で包んであるので、`useEffect` は開発時に 2 回走る。`Viewer` を作る `useEffect` の cleanup で必ず `viewer.dispose()`（`WebGLRenderer.dispose()` と `cancelAnimationFrame`）を呼ぶこと。忘れると WebGL コンテキストが 2 つ生成され、「なぜか重い」「context lost」という原因の分かりにくい形で出る。
+
 `src/ui/App.tsx` に、コンテナ `div` へ `new Viewer(el)` を作り、`store.subscribe` で `viewer.setModel(state.model)` を呼ぶ `useEffect` を書く。`npm run dev` で白い背景と格子が出て、左ドラッグで回転できることを確認する。設計書 A2 の「板」は Task 15 で DXF が読めてから確認する。
 
 **Step 4: Commit** → `git commit -m "feat: three.js シーン・カメラ・ラベルと状態ストア"`
@@ -2626,6 +2636,8 @@ export default defineConfig({
   use: { baseURL: 'http://localhost:5173', viewport: { width: 1280, height: 800 } },
 });
 ```
+
+併せて `vite.config.ts` に `server: { port: 5173, strictPort: true }` を足す。Vite は 5173 が埋まっていると黙って 5174 に移るので、他の開発サーバーが動いていると E2E が別のアプリに繋がる。
 
 `npx playwright install chromium` を 1 回実行する（外部ダウンロード。⚠️ リスク: 中（外部送信なし・実行ファイル取得）。Microsoft 配布の公式バイナリ）。
 

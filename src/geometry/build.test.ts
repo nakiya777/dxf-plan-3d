@@ -251,20 +251,19 @@ describe('屋根と妻壁', () => {
 });
 
 describe('roofGeometry', () => {
-  it('時計回りで渡された面でも上面の法線は +y（RoofGeom は面の向きを約束しない）', () => {
+  it('時計回りで渡された面でも全ての面の法線が外向き（RoofGeom は面の向きを約束しない）', () => {
     const cw = [{ x: 0, y: 0, z: 3000 }, { x: 0, y: 4000, z: 3000 }, { x: 5000, y: 4000, z: 3000 }, { x: 5000, y: 0, z: 3000 }];
     const rg = { ridgeZ: 3000, ridge: [cw[0], cw[1]] as [typeof cw[0], typeof cw[0]], planes: [cw], edges: [], heightAt: () => 3000 };
     const g = roofGeometry(rg, 150);
+    g.computeBoundingBox();
+    const center = g.boundingBox!.getCenter(new Vector3());
     const pos = g.getAttribute('position'), nor = g.getAttribute('normal');
-    let upTop = 0, wrong = 0;
+    let inward = 0;
     for (let i = 0; i < pos.count; i++) {
-      if (Math.abs(nor.getY(i)) < 0.5) continue;
-      const isTop = Math.abs(pos.getY(i) - 3.0) < 1e-6;
-      if (isTop && nor.getY(i) > 0) upTop++;
-      if (isTop !== nor.getY(i) > 0) wrong++;
+      const v = new Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)).sub(center);
+      if (v.dot(new Vector3(nor.getX(i), nor.getY(i), nor.getZ(i))) < 0) inward++;
     }
-    expect(upTop).toBeGreaterThan(0);
-    expect(wrong).toBe(0);
+    expect(inward).toBe(0);
   });
 });
 

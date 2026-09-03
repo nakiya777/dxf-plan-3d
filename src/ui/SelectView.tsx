@@ -16,6 +16,8 @@ export function SelectView() {
   const plan = s.plan2d!;
   const svgRef = useRef<SVGSVGElement>(null);
   const dragStart = useRef<Vec2 | null>(null);
+  /** ドラッグ中の矩形の現在値。`drag` state は描画専用で、`onUp` はこちらを読む（閉包の古い値を掴まないため） */
+  const dragRect = useRef<Box2 | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [drag, setDrag] = useState<Box2 | null>(null);
   const [selected, setSelected] = useState<Box2 | null>(null);
@@ -50,6 +52,7 @@ export function SelectView() {
     svgRef.current!.setPointerCapture(e.pointerId);
     dragStart.current = toPlan(e);
     setSelected(null);
+    dragRect.current = null;
     setDrag(null);
     store.set({ notice: undefined });
   };
@@ -57,13 +60,16 @@ export function SelectView() {
     const a = dragStart.current;
     if (!a) return;
     const p = toPlan(e);
-    setDrag({ minX: Math.min(a.x, p.x), minY: Math.min(a.y, p.y), maxX: Math.max(a.x, p.x), maxY: Math.max(a.y, p.y) });
+    dragRect.current = { minX: Math.min(a.x, p.x), minY: Math.min(a.y, p.y), maxX: Math.max(a.x, p.x), maxY: Math.max(a.y, p.y) };
+    setDrag(dragRect.current);
   };
   const onUp = () => {
     dragStart.current = null;
-    if (!drag) return;
+    const rect = dragRect.current;
+    if (!rect) return;
+    dragRect.current = null;
     setDrag(null);
-    const region = selectRegion(plan, drag);
+    const region = selectRegion(plan, rect);
     if (region.entities.length === 0) {
       store.set({ notice: '範囲に図形がありません。囲み直してください' });
       return;
@@ -73,6 +79,7 @@ export function SelectView() {
     timer.current = setTimeout(() => {
       timer.current = null;
       const planModel = recognizePlan(region);
+      // 壁 0 本の注意と 2 枚混入の疑い（壁が 2 群）は両立しないので、先頭 1 件を出せば足りる
       const notices = [...planModel.warnings, ...(twoPlansSuspected(planModel) ? ['平面図が 2 枚入っている可能性があります'] : [])];
       store.set((st) => ({ model: addFloor(st.model, planModel), mode: 'idle', plan2d: undefined, busy: undefined, notice: notices[0] }));
     }, HIGHLIGHT_MS);

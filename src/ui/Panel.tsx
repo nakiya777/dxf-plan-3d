@@ -8,7 +8,7 @@ import { store, useAppState } from '../state/store';
 const ROOF_DEFAULTS = { pitchSun: 4, eave: 600, verge: 600 };
 
 /**
- * 屋根ボタンを押せるか。階ゼロでは無効（§10）。
+ * 「屋根をかける」を押せるか。階ゼロでは無効（§10）。「屋根を外す」は常に押せる（退化した屋根を外せなくなるのを避ける）。
  * 加えて最上階に外壁が 1 本も無ければ無効にする（外壁芯の矩形が 0 になり、退化した屋根ができるため。Task 12 の申し送り）
  */
 function canToggleRoof(model: BuildingModel): boolean {
@@ -55,14 +55,14 @@ export function Panel() {
         <p className="hint">描いた形は厚さ 100mm の板になります。上面を持ち上げてください。</p>
         <label className="field">
           1階の床高さ
-          <input type="number" step={10} min={0} value={s.model.floor1Level} onChange={(e) => store.updateModel((m) => setFloor1Level(m, Number(e.target.value)))} />
+          <input type="number" step={10} min={0} value={s.model.floor1Level} onChange={(e) => { if (e.target.value !== '') store.updateModel((m) => setFloor1Level(m, Number(e.target.value))); }} />
           mm
         </label>
       </section>
       <section>
         <h3>屋根</h3>
         <div className="row">
-          <button disabled={!canToggleRoof(s.model)} onClick={() => store.updateModel((m) => (m.roof ? removeRoof(m) : addRoof(m)))}>
+          <button disabled={!roof && !canToggleRoof(s.model)} onClick={() => store.updateModel((m) => (m.roof ? removeRoof(m) : addRoof(m)))}>
             {roof ? '屋根を外す' : '屋根をかける'}
           </button>
           <button disabled title="Phase 2">切り欠き</button>

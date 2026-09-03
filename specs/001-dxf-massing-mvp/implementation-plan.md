@@ -1702,6 +1702,8 @@ export function setRidgeOffset(model: BuildingModel, value: number): BuildingMod
 
 ---
 
+> **Task 10・11 の下書きは「寄棟の既定 inset = W/2 + e」を前提にしているが、これは誤り。** 実装時（2026-09-03）に幾何の矛盾が判明し、設計書 §8.4 を W/2 に訂正した。下書きのテストの `5915 / 2 + 600` は `5915 / 2` が正しい。コミット済みのテストが正。
+
 ### Task 11: `model/roof.ts` 屋根の幾何（設計書 §8.4）
 
 **Files:**

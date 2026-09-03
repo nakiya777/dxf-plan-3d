@@ -1,0 +1,43 @@
+/* 最小限のレイアウト。装飾はしない（設計書 §6.1） */
+body { font-family: system-ui, sans-serif; font-size: 13px; color: #222; }
+
+/* 全画面の 3D キャンバス */
+.canvas { position: fixed; inset: 0; overflow: hidden; }
+
+/* 「長方形を描く」の間、canvas の上に重ねて pointer を受ける透明な層 */
+.rect-overlay { position: absolute; inset: 0; cursor: crosshair; z-index: 5; }
+
+/* 右上に浮く白いカード */
+.panel {
+  position: fixed; top: 14px; right: 14px; width: 300px; padding: 14px; box-sizing: border-box;
+  background: #fff; border-radius: 6px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18); z-index: 10;
+}
+.panel section + section { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e0e0e0; }
+.panel h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.panel .row { display: flex; gap: 8px; }
+.panel .row button { flex: 1; padding: 6px 4px; }
+.panel .hint { margin: 8px 0; color: #555; }
+.panel .field { display: flex; align-items: center; gap: 6px; }
+.panel .field input { width: 70px; }
+.panel .slider { display: grid; grid-template-columns: 1fr 76px; align-items: center; margin-top: 8px; }
+.panel .slider span { grid-column: 1 / -1; }
+.panel .slider strong { text-align: right; font-weight: 500; white-space: nowrap; }
+.panel .slider input { width: 100%; margin: 0; }
+
+/* エラーは赤字 1 行、処理中は灰字 */
+.notice { color: #d32f2f; margin: 8px 0 0; }
+.busy { color: #777; margin: 8px 0 0; }
+
+/* 2D 選択ビュー: 3D の上に全画面で重ねる */
+.select-view { position: fixed; inset: 0; background: #fff; z-index: 20; display: flex; flex-direction: column; }
+.select-view header, .overlay-head {
+  display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 14px; box-sizing: border-box;
+  background: #fff; border-bottom: 1px solid #e0e0e0;
+}
+.select-view header > span:first-child, .overlay-head > span { flex: 1; font-weight: 600; }
+.select-view header .notice { margin: 0; }
+.select-view svg { flex: 1; width: 100%; min-height: 0; touch-action: none; user-select: none; }
+
+/* 矩形描画のヘッダ。画面上端に重ねる */
+/* パネル（右 14 px + 幅 300 px）と重ならないよう右側を空ける */
+.overlay-head { position: fixed; top: 0; left: 0; right: 330px; z-index: 15; }

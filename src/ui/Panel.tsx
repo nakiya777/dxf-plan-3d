@@ -3,6 +3,11 @@ import { loadDxf } from '../dxf';
 import { addRoof, removeRoof, ROOF_DEFAULTS, setFloor1Level, setRoofParam } from '../model/building';
 import type { BuildingModel } from '../model/types';
 import { store, useAppState } from '../state/store';
+// デモ用の自作平面図。Vite の `?url` でハッシュ付きの配信 URL になる（public/ に複製すると二重管理になるので import で参照する）
+import sampleUrl from '../../fixtures/sample-house.dxf?url';
+
+/** サンプル平面図のファイル名。通知と説明文に出す */
+const SAMPLE_NAME = 'sample-house.dxf';
 
 /**
  * 「屋根をかける」を押せるか。階ゼロでは無効（§10）。「屋根を外す」は常に押せる（退化した屋根を外せなくなるのを避ける）。
@@ -20,15 +25,22 @@ export function Panel() {
   const roof = s.model.roof;
 
   /** DXF を解析して 2D 選択ビューへ。読めなければ赤字 1 行を出し、状態は変えない（§10） */
-  const onFile = async (file: File) => {
+  const loadBuffer = async (read: () => Promise<ArrayBuffer>, name: string) => {
     store.set({ busy: '読み込み中…', notice: undefined });
     try {
-      const plan = loadDxf(await file.arrayBuffer(), file.name);
+      const plan = loadDxf(await read(), name);
       store.set({ plan2d: plan, mode: 'select2d', busy: undefined });
     } catch (err) {
       store.set({ busy: undefined, notice: `DXF を読み込めませんでした（${(err as Error).message}）` });
     }
   };
+  const onFile = (file: File) => loadBuffer(() => file.arrayBuffer(), file.name);
+  /** 静的アセットのサンプル平面図を取りに行き、ファイル選択と同じ経路で読む */
+  const onSample = () => loadBuffer(async () => {
+    const res = await fetch(sampleUrl);
+    if (!res.ok) throw new Error(`${SAMPLE_NAME} の取得に失敗（HTTP ${res.status}）`);
+    return res.arrayBuffer();
+  }, SAMPLE_NAME);
 
   return (
     <aside className="panel">
@@ -49,6 +61,10 @@ export function Panel() {
             }}
           />
         </div>
+        <div className="row">
+          <button disabled={!!s.busy} onClick={() => void onSample()}>サンプル平面図を読み込む</button>
+        </div>
+        <p className="hint">デモ用。1 階と 2 階が横並びの自作図面（{SAMPLE_NAME}）</p>
         <p className="hint">描いた形は厚さ 100mm の板になります。上面を持ち上げてください。</p>
         <label className="field">
           1階の床高さ

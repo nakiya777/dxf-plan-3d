@@ -130,6 +130,18 @@ test('動画の流れ: 1 階 → 2 階 → 屋根 → 切妻 → 向き → 勾�
   await page.screenshot({ path: 'test-results/final.png' });
 });
 
+test('「サンプル平面図を読み込む」でファイル選択なしに 1 階が立ち上がる', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'サンプル平面図を読み込む' }).click();
+  await expect(page.getByText('平面図を囲んでください')).toBeVisible();
+  await page.evaluate((r) => window.__app.selectRegion(r), F1);
+  await expect.poll(() => page.evaluate(() => window.__app.getModel().floors.length)).toBe(1);
+  await expect(page.locator('.select-view')).toHaveCount(0);
+  const f1 = await page.evaluate(() => window.__app.getModel().floors[0]);
+  expect(f1.plan.axes.length).toBe(6);
+  await expect(page.locator('.notice')).toHaveCount(0);
+});
+
 test('青ハンドルの上ドラッグでラベルが「壁の高さ x.xx m」になり、モデルの topZ と一致する（A3）', async ({ page }) => {
   await page.goto('/');
   await loadAndSelect(page, FIXTURE, F1);

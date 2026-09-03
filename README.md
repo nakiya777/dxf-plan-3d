@@ -4,13 +4,15 @@ DXF の平面図を読み込み、壁（開口部・階段付き）を立ち上�
 
 ## 状態
 
-- **2026-09-04:** MVP（実装計画 Task 1〜17）完了。単体テスト 191 件、E2E 7 件が通る
+- **2026-09-04:** MVP（実装計画 Task 1〜17）完了。単体テスト 191 件、E2E 8 件が通る
 - 参考動画（`specs/001-dxf-massing-mvp/reference/reference.mp4`）に映るデモと機能を同一にすることがゴール。動画の流れは次の 4 段
 
 1. DXF を読み込み、平面図の 1 階を矩形で囲むと壁・開口・階段が立ち上がる
 2. 青ハンドルのドラッグで壁の高さを変える
 3. 2 階も同じ手順で乗せる
 4. 屋根をかけ、寄棟／切妻・向き・勾配を変える
+
+公開先: https://github.com/nakiya777/dxf-plan-3d （公開、既定ブランチ master）
 
 ## 起動手順
 
@@ -23,16 +25,17 @@ Node 22 を前提にしている。
 | `npm test` | 単体テスト（vitest）。193 件 |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run build` | 型検査のあと `dist/` に本番ビルドを出す |
-| `npm run e2e` | E2E（Playwright、7 件）。初回だけ `npx playwright install chromium` が要る。開発サーバーは Playwright が自分で起こすので、先に `npm run dev` を打つ必要はない（動いていればそれを使う）。CI では `reuseExistingServer` を無効にしてあり、必ず自分で起こす |
+| `npm run e2e` | E2E（Playwright、8 件）。初回だけ `npx playwright install chromium` が要る。開発サーバーは Playwright が自分で起こすので、先に `npm run dev` を打つ必要はない（動いていればそれを使う）。CI では `reuseExistingServer` を無効にしてあり、必ず自分で起こす |
 | `npm run make-fixtures` | 自作フィクスチャ `fixtures/sample-house*.dxf` を `scripts/make-sample-dxf.ts` から再生成する |
 
 ## 実図面フィクスチャについて
 
-`fixtures/forest-s/`（実在する住宅の図面）は権利上の配慮で公開リポジトリに含めず、ローカルにだけ置く。無くてもテストとビルドは通る。実図面を使う試験は **skip** として数えられ、失敗にはならない（単体 193 件中 13 件、E2E 7 件中 1 件）。判定は `src/recognize/testing.ts` の `hasForestS()`（`existsSync`）で、実図面がある環境では従来どおり全件走る。
+`fixtures/forest-s/`（実在する住宅の図面）は権利上の配慮で公開リポジトリに含めず、ローカルにだけ置く。無くてもテストとビルドは通る。実図面を使う試験は **skip** として数えられ、失敗にはならない（単体 193 件中 13 件、E2E 8 件中 1 件）。判定は `src/recognize/testing.ts` の `hasForestS()`（`existsSync`）で、実図面がある環境では従来どおり全件走る。
 
 ## 使い方
 
 1. 「DXF 平面を描く」を押して DXF ファイルを選ぶ。2D の選択ビューに図面全体が出る
+   - デモなら「サンプル平面図を読み込む」でファイル選択を省ける（`fixtures/sample-house.dxf` を静的アセットとして読む）
 2. 平面図の 1 階を矩形で囲む。**壁の線を跨ぐ位置で小さく囲めば、つながった図形全体に広がる**（囲みは「触れた図形を拾う種」で、全体を覆う必要は無い）。線に触れない空室の中だけを囲むと「範囲に図形がありません」と出る
 3. 壁が立ち上がったら青ハンドルをドラッグする。縦方向のドラッグは高さ（0.05 m 刻み、ラベルに「壁の高さ 1.60 m」のように出る）、横方向は階の平行移動
 4. 2 階は「DXF 平面を描く」からもう一度、2 階の平面図を囲む。1 階の天端にスラブ厚を足した高さに乗る
@@ -53,7 +56,7 @@ Node 22 を前提にしている。
 | 項目 | 値 |
 |---|---|
 | 単体テスト | 191 件 / 12 ファイル、0.6 秒 |
-| E2E | 7 件 |
+| E2E | 8 件 |
 | `buildBuilding`（forest-s 2 階建て、壁・開口・階段の 3D 生成） | 4〜5 ms |
 | `setTopZ` 1 回の同期コスト（store 更新 → 3D 再生成 → ハンドル再構築） | 自作フィクスチャ 1.09 ms / forest-s 1.77 ms |
 | ドラッグ中の fps | 60（vsync 上限で頭打ち。余裕は上の同期コストで見る） |

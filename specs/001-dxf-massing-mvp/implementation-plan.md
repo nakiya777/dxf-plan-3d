@@ -340,6 +340,26 @@ Expected: `fixtures written`、テスト 2 件 PASS。
 
 `python -c "import ezdxf; ..."` は使わず、Task 4 の 2D ビューで見るまで待ってよい。ただし Shift_JIS 版のヘッダに `$DWGCODEPAGE` が入ったことだけ `head -c 400 fixtures/sample-house-sjis.dxf` で確認する。
 
+**生成物の実測値（2026-09-03。後続タスクの期待値はこれに合わせる）**
+
+`sample-house.dxf` は 223 エンティティ。1 階は X −1,370〜8,530、2 階は X 10,630〜20,530（間隔 12,000 mm）なので、**階の切り分けは X = 9,000 を境にすれば安全**。
+
+| レイヤー | 内訳 |
+|---|---|
+| 壁 | LINE 72 |
+| 建具 | LINE 37（窓 14×2）/ ARC 9（ドア） |
+| 階段 | LINE 30（踏面 10 + 側線 2 + 矢印 3 の 15 × 2 階分） |
+| 通り芯 | LINE 12 / CIRCLE 24（半径 250、1 階 12・2 階 12）/ TEXT 24 |
+| 文字 | TEXT 13（部屋名と `UP` `DN`） |
+| 図枠 | TEXT 2 |
+
+- **ドアの弧は 1 階 5 個・2 階 4 個**（合計 9）。すべて掃引 90°、半径 = 開口幅。窓は 1 階 6 個・2 階 6 個
+- **`UP` / `DN` は `階段` レイヤーではなく `文字` レイヤーにある。** 階段認識で「階段レイヤーの文字」を探すと見つからない（§7.2 手順 6 は全レイヤーの文字を見る規定なので問題ない）
+- 通り芯のラベル文字は円の中心から `(−120, −100)` ずれた位置が挿入点。バブルとの対応付けは「円の中心から半径 250 以内に挿入点がある文字」で拾える
+- `sample-house-with-centerline.dxf` は `通り芯`（グリッド）と `壁芯`（各壁の芯線 13 本）を**両方**持つ。壁芯だけを見るならレイヤーで絞る
+- Shift_JIS 版は `$ACADVER = AC1015`、UTF-8 版 2 つは `AC1021`
+- 再実行しても 3 ファイルとも md5 が一致する（生成は決定的）
+
 **Step 6: Commit**
 
 ```bash
@@ -1053,7 +1073,8 @@ describe('開口の認識', () => {
     expect(wide?.sill).toBe(0);
     expect(m.openings.some((o) => o.type === 'window' && o.sill === 900)).toBe(true);
     expect(m.openings.filter((o) => o.type === 'door').every((o) => o.head === 2000)).toBe(true);
-    expect(m.openings.filter((o) => o.type === 'door').length).toBe(6);
+    expect(m.openings.filter((o) => o.type === 'door').length).toBe(5);
+    expect(m.openings.filter((o) => o.type === 'window').length).toBe(6);
   });
 });
 ```

@@ -1,5 +1,5 @@
 import type { Box2, Plan2D, PlanEntity } from '../model/types';
-import { bboxOf } from '../dxf';
+import { bboxOf } from '../model/bbox';
 
 const entityBox = (e: PlanEntity): Box2 => bboxOf([e]);
 const intersects = (a: Box2, b: Box2) => a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;

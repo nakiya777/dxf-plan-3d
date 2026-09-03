@@ -41,6 +41,8 @@ export const CFG = {
   collinearRhoTol: 20,
   /** 外形と認める最小の面積比（全壁矩形の外接矩形に対する比）。下回れば bbox に落とす */
   outlineMinBboxRatio: 0.3,
+  /** 壁の帯がこれ以上離れた 2 群に分かれていれば、平面図が 2 枚入った疑い（§10） */
+  twoPlansGap: 3000,
   /** 外壁判定で壁面から外へ踏み出す距離。外形の縁との数値誤差を避けるための余白 */
   exteriorProbeMargin: 5,
 

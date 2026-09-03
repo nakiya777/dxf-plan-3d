@@ -1,14 +1,11 @@
-import { BufferGeometry, Line, LineBasicMaterial, Plane, Raycaster, Vector2, Vector3 } from 'three';
-import { toModel, toScene } from '../geometry/coords';
-import { addFloor } from '../model/building';
+import { BufferGeometry, Line, LineBasicMaterial, Plane, Raycaster, Vector3 } from 'three';
+import { addFloor, SNAP_XY } from '../model/building';
 import type { Box2, PlanModel, Vec2 } from '../model/types';
 import { store } from '../state/store';
-import type { Viewer } from '../viewer/scene';
+import { ndcFromPointer, toModel, toScene, type Viewer } from '../viewer/scene';
 
 /** 描いた矩形の外周に立てる壁の厚さ（設計書 §6.6） */
 const WALL_THICKNESS = 150;
-/** 矩形の座標スナップ（mm） */
-const SNAP_MM = 10;
 /** これより小さい辺の矩形は作らない（クリックだけで離した場合） */
 const MIN_SIDE_MM = 100;
 /** ドラッグ中の矩形をなぞる線を地面から浮かせる高さ（m）。格子と重なってちらつかないようにする */
@@ -58,11 +55,11 @@ export class RectDraw {
   /** カーソル位置から地面（シーン y = 0）への交点を建物座標（mm）で返す */
   private hitGround(e: PointerEvent): Vec2 | null {
     const r = this.overlay.getBoundingClientRect();
-    this.ray.setFromCamera(new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.viewer.camera);
+    this.ray.setFromCamera(ndcFromPointer(e, r), this.viewer.camera);
     const p = new Vector3();
     if (!this.ray.ray.intersectPlane(this.ground, p)) return null;
     const m = toModel(p);
-    return { x: Math.round(m.x / SNAP_MM) * SNAP_MM, y: Math.round(m.y / SNAP_MM) * SNAP_MM };
+    return { x: Math.round(m.x / SNAP_XY) * SNAP_XY, y: Math.round(m.y / SNAP_XY) * SNAP_XY };
   }
 
   private down(e: PointerEvent): void {

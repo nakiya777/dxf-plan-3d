@@ -2,7 +2,7 @@ import {
   BoxGeometry, BufferGeometry, ConeGeometry, Group, Mesh, MeshBasicMaterial, Object3D, OctahedronGeometry, Plane, Raycaster,
   SphereGeometry, TorusGeometry, Vector2, Vector3,
 } from 'three';
-import { toModel, toScene } from '../geometry/coords';
+import { ndcFromPointer, pxFromNdc, toModel, toScene } from '../geometry/coords';
 import { centerlineRect, moveFloor, rotateRidge, setInset, setRidgeOffset, setTopZ, topFloorRect } from '../model/building';
 import type { BuildingModel, FloorBlock } from '../model/types';
 import { store } from '../state/store';
@@ -49,7 +49,8 @@ interface Drag {
 
 /**
  * ハンドルの生成・ホバー・ドラッグ（設計書 §6.3・§6.5）。
- * ドラッグは `model/` の純粋関数に変換してストアへ書き戻し、描画は Viewer の全再生成に任せる
+ * ドラッグは `model/` の純粋関数に変換してストアへ書き戻し、描画は Viewer の全再生成に任せる。
+ * Phase 2 で viewer を再利用するなら、`HandleController` にストア更新のコールバックを注入する形に変える（今は `store` を直接掴んでいる）
  */
 export class HandleController {
   private readonly ray = new Raycaster();
@@ -123,7 +124,7 @@ export class HandleController {
   /** カーソル位置からレイを張る（NDC 変換はここ 1 か所） */
   private setRay(e: PointerEvent): void {
     const r = this.el.getBoundingClientRect();
-    this.ray.setFromCamera(new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.viewer.camera);
+    this.ray.setFromCamera(ndcFromPointer(e, r), this.viewer.camera);
   }
 
   /** カーソル位置にレイを張り、当たったハンドル（グループならその親）を返す */
@@ -148,10 +149,7 @@ export class HandleController {
    */
   private screenDeltaToHeight(delta: Vector2, through: Vector3): number {
     const r = this.el.getBoundingClientRect();
-    const toPx = (p: Vector3) => {
-      const n = p.clone().project(this.viewer.camera);
-      return new Vector2((n.x + 1) / 2 * r.width, (1 - n.y) / 2 * r.height);
-    };
+    const toPx = (p: Vector3) => pxFromNdc(p.clone().project(this.viewer.camera), r);
     const base = toPx(through);
     const up = toPx(through.clone().setY(through.y + 1)).sub(base);
     const lengthSq = up.lengthSq();

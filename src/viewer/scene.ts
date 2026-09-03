@@ -4,6 +4,9 @@ import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { buildBuilding, disposeBuilding, type BuiltBuilding } from '../geometry/build';
 import type { BuildingModel } from '../model/types';
 
+// 座標変換は viewer の窓口として出す。ui/ は geometry/ を直接掴まず、ここから取る（層: ui → viewer → geometry）
+export { ndcFromPointer, pxFromNdc, toModel, toScene } from '../geometry/coords';
+
 /** 格子の一辺（m）。住宅規模なら十分に収まる */
 const GRID_SIZE = 60;
 /** 初期カメラ位置（シーン座標 m）。建物を左手前上から見下ろす（設計書 §6.7） */

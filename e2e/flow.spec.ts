@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 // window.__app の型（declare global）だけを取り込む。実行時には消える（アプリ本体を Node に読ませない）
+import type { FloorBlock, Wall } from '../src/model/types';
 import type { AppHooks } from '../src/ui/testHooks';
 export type { AppHooks };
 
@@ -173,9 +174,9 @@ test('ドラッグ中の描画が 30 fps 以上（forest-s 2 階建て、A11）'
   // forest-s は通り芯が無いので外壁の重ね合わせで位置が決まる: 外壁芯 bbox の中心が一致する
   const centers = await page.evaluate(() => {
     const floors = window.__app.getModel().floors;
-    return floors.map((f: any) => {
-      const pts = f.plan.walls.filter((w: any) => w.exterior).flatMap((w: any) => [w.a, w.b]);
-      const xs = pts.map((p: any) => p.x), ys = pts.map((p: any) => p.y);
+    return floors.map((f: FloorBlock) => {
+      const pts = f.plan.walls.filter((w: Wall) => w.exterior).flatMap((w: Wall) => [w.a, w.b]);
+      const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
       return { x: (Math.min(...xs) + Math.max(...xs)) / 2 + f.offset.x, y: (Math.min(...ys) + Math.max(...ys)) / 2 + f.offset.y };
     });
   });

@@ -5,7 +5,7 @@ import type { RoofGeom } from '../model/roof';
 import type { Box2, BuildingModel } from '../model/types';
 import { selectRegion } from '../recognize';
 import { store } from '../state/store';
-import type { Viewer } from '../viewer/scene';
+import { pxFromNdc, type Viewer } from '../viewer/scene';
 import { commitRegion, EMPTY_REGION_NOTICE } from './commitRegion';
 
 /** `window.__app` の型。spec 側もこれで参照する */
@@ -58,7 +58,8 @@ export function installTestHooks(viewer: Viewer): void {
       if (!handle) return undefined;
       const p = handle.getWorldPosition(new Vector3()).project(viewer.camera);
       const el = viewer.renderer.domElement;
-      return { x: ((p.x + 1) / 2) * el.clientWidth, y: ((1 - p.y) / 2) * el.clientHeight };
+      const px = pxFromNdc(p, { width: el.clientWidth, height: el.clientHeight });
+      return { x: px.x, y: px.y };
     },
   };
 }

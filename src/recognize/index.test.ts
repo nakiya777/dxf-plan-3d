@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadDxf } from '../dxf';
 import type { PlanEntity } from '../model/types';
-import { recognizePlan } from './index';
+import { recognizePlan, twoPlansSuspected } from './index';
 import { detectAxes } from './axes';
 import { selectRegion } from './region';
 import { line } from './testing';
@@ -72,5 +72,20 @@ describe('detectAxes', () => {
   });
   it('寸法線端末の小円（半径 5）は通り芯にしない', () => {
     expect(detectAxes([circle(0, 0, 5), text(0, 0, 'A'), line('寸法', 0, -5, 0, 500)])).toHaveLength(0);
+  });
+});
+
+describe('twoPlansSuspected', () => {
+  const wall = (id: string, a: [number, number], b: [number, number]) =>
+    ({ id, a: { x: a[0], y: a[1] }, b: { x: b[0], y: b[1] }, thickness: 150, exterior: true });
+  const model = (walls: ReturnType<typeof wall>[]) =>
+    ({ walls, openings: [], stairs: [], axes: [], outline: [], decorLines: [], warnings: [] });
+  it('1 部屋（3.6 m 角）の 4 辺は、端点の間隔が 3 m を超えても誤検出しない', () => {
+    const m = model([wall('w1', [0, 0], [3600, 0]), wall('w2', [3600, 0], [3600, 3600]), wall('w3', [3600, 3600], [0, 3600]), wall('w4', [0, 3600], [0, 0])]);
+    expect(twoPlansSuspected(m)).toBe(false);
+  });
+  it('X 方向に 3 m 超の空白を挟んで壁の群が 2 つあれば検出する', () => {
+    const m = model([wall('w1', [0, 0], [3600, 0]), wall('w2', [0, 3600], [3600, 3600]), wall('w3', [7000, 0], [10600, 0]), wall('w4', [7000, 3600], [10600, 3600])]);
+    expect(twoPlansSuspected(m)).toBe(true);
   });
 });

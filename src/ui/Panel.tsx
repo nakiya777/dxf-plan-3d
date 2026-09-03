@@ -1,11 +1,8 @@
 import { useRef } from 'react';
 import { loadDxf } from '../dxf';
-import { addRoof, removeRoof, setFloor1Level, setRoofParam } from '../model/building';
+import { addRoof, removeRoof, ROOF_DEFAULTS, setFloor1Level, setRoofParam } from '../model/building';
 import type { BuildingModel } from '../model/types';
 import { store, useAppState } from '../state/store';
-
-/** 屋根の既定値（設計書 §6.4）。`roof` が無いときのスライダー表示に使う */
-const ROOF_DEFAULTS = { pitchSun: 4, eave: 600, verge: 600 };
 
 /**
  * 「屋根をかける」を押せるか。階ゼロでは無効（§10）。「屋根を外す」は常に押せる（退化した屋根を外せなくなるのを避ける）。

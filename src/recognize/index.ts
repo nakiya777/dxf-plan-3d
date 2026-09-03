@@ -1,5 +1,6 @@
 import type { Plan2D, PlanEntity, PlanModel } from '../model/types';
 import { detectAxes } from './axes';
+import { CFG } from './config';
 import { extractBands } from './bands';
 import { toSegments } from './geom';
 import { detectOpenings } from './openings';
@@ -39,3 +40,21 @@ export function recognizePlan(plan: Plan2D): PlanModel {
 }
 
 export { selectRegion } from './region';
+
+/**
+ * 平面図が 2 枚入った疑い（§10）: 壁の占める区間を X・Y それぞれで合併し、
+ * `CFG.twoPlansGap` 以上の空白を挟んで 2 群に分かれていれば真。端点の間隔で見ると 1 部屋の幅（3.6 m など）で誤検出するため、区間の合併で見る
+ */
+export function twoPlansSuspected(m: PlanModel): boolean {
+  return (['x', 'y'] as const).some((axis) => {
+    const intervals = m.walls
+      .map((w) => [Math.min(w.a[axis], w.b[axis]), Math.max(w.a[axis], w.b[axis])] as [number, number])
+      .sort((p, q) => p[0] - q[0]);
+    let reach = -Infinity;
+    for (const [lo, hi] of intervals) {
+      if (reach !== -Infinity && lo - reach > CFG.twoPlansGap) return true;
+      reach = Math.max(reach, hi);
+    }
+    return false;
+  });
+}

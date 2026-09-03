@@ -2,8 +2,10 @@ import type { Box2, BuildingModel, FloorBlock, PlanModel, Roof, Vec2, Wall } fro
 
 /** 高さのスナップ（設計書 §6.3） */
 const SNAP_Z = 50;
-/** 横移動・棟の平行移動のスナップ（§6.3、§6.5） */
-const SNAP_XY = 10;
+/** 横移動・棟の平行移動のスナップ（§6.3、§6.5）。`ui/RectDraw` の矩形スナップにも使う */
+export const SNAP_XY = 10;
+/** 屋根の既定値（設計書 §6.4）。`addRoof` と、屋根が無いときのスライダー表示（`ui/Panel`）の両方がこれを使う */
+export const ROOF_DEFAULTS = { pitchSun: 4, eave: 600, verge: 600, thickness: 150 } as const;
 /** 橙球の 0（切妻）・既定の寄棟位置へのスナップ幅（§6.5） */
 const INSET_SNAP = 100;
 /** 緑菱形の可動範囲を W/2 から縮める余白（§6.5） */
@@ -213,7 +215,7 @@ export function addRoof(model: BuildingModel): BuildingModel {
   const rect = topFloorRect(model);
   const axis: 'x' | 'y' = rect.maxX - rect.minX >= rect.maxY - rect.minY ? 'x' : 'y';
   const inset = defaultInset(rect, axis);
-  const roof: Roof = { axis, ridgeOffset: 0, inset: [inset, inset], pitchSun: 4, eave: 600, verge: 600, thickness: 150 };
+  const roof: Roof = { axis, ridgeOffset: 0, inset: [inset, inset], ...ROOF_DEFAULTS };
   return { ...model, roof };
 }
 

@@ -24,6 +24,7 @@ export function App() {
       // ブロックが増減したときだけカメラを寄せる（§6.7）。ハンドル操作のたびに動かさない
       if (st.model.floors.length !== floorCount) { floorCount = st.model.floors.length; viewer.fitToBuilding(); }
       rectDraw.setActive(st.mode === 'drawRect');
+      viewer.setSeeThrough(st.seeThrough);
     };
     const unsubscribe = store.subscribe(sync);
     sync();

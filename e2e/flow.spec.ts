@@ -284,6 +284,37 @@ test('長方形を描くで板ができ、以降 DXF 由来と同じ操作がで
   expect(await page.evaluate(() => window.__app.roofGeom()?.planes.length)).toBe(4);
 });
 
+test('「正面の壁を透かす」でカメラに向いた外壁だけが半透明になり、回すと入れ替わり、戻すと 0 本になる', async ({ page }) => {
+  await page.goto('/');
+  await loadAndSelect(page, FIXTURE, F1);
+  await page.evaluate((id) => window.__app.setTopZ(id, 3650), (await page.evaluate(() => window.__app.getModel().floors[0])).id);
+  await loadAndSelect(page, FIXTURE, F2);
+  await waitFrames(page);
+  expect(await page.evaluate(() => window.__app.seeThroughWalls())).toEqual([]);
+
+  await page.getByRole('button', { name: '正面の壁を透かす' }).click();
+  await expect(page.getByRole('button', { name: '正面の壁を戻す' })).toBeVisible();
+  await waitFrames(page);
+  const front = await page.evaluate(() => window.__app.seeThroughWalls());
+  expect(front.length).toBeGreaterThan(0);
+  const model = await page.evaluate(() => window.__app.getModel());
+  const walls = model.floors.flatMap((f: FloorBlock) => f.plan.walls);
+  expect(front.every((id) => walls.find((w: Wall) => w.id === id)?.exterior)).toBe(true);
+  expect(front.length).toBeLessThan(walls.filter((w: Wall) => w.exterior).length);   // 全部は透けない
+
+  // 注視点まわりに 180° 回す（fitToBuilding の視線方向 FIT_DIRECTION の方位角 + 180°）→ 正面の壁が入れ替わる
+  await page.evaluate(() => window.__app.setCameraAzimuth((Math.atan2(-0.9, 1) * 180) / Math.PI + 180));
+  await waitFrames(page);
+  const back = await page.evaluate(() => window.__app.seeThroughWalls());
+  expect(back.length).toBeGreaterThan(0);
+  expect(back.some((id) => !front.includes(id))).toBe(true);
+  expect(front.some((id) => !back.includes(id))).toBe(true);
+
+  await page.getByRole('button', { name: '正面の壁を戻す' }).click();
+  await waitFrames(page);
+  expect(await page.evaluate(() => window.__app.seeThroughWalls())).toEqual([]);
+});
+
 /** 壁レイヤーの無い最小 DXF（三角形の LINE 3 本）。帯を作らないので壁 0 本になる */
 const UNRECOGNIZABLE_DXF = [
   '0', 'SECTION', '2', 'ENTITIES',

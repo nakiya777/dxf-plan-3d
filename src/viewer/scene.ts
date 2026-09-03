@@ -1,8 +1,11 @@
-import { AmbientLight, Box3, Color, DirectionalLight, GridHelper, Group, MOUSE, PerspectiveCamera, Scene, Vector3, WebGLRenderer } from 'three';
+import {
+  AmbientLight, Box3, Color, DirectionalLight, GridHelper, Group, Mesh, MeshLambertMaterial, MOUSE, PerspectiveCamera, Scene, Spherical, Vector3, WebGLRenderer,
+} from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { buildBuilding, disposeBuilding, type BuiltBuilding } from '../geometry/build';
-import type { BuildingModel } from '../model/types';
+import { buildBuilding, disposeBuilding, MATERIALS, type BuiltBuilding, type WallUserData } from '../geometry/build';
+import { wallFacesCamera } from '../geometry/facing';
+import type { BuildingModel, Vec2 } from '../model/types';
 
 // 座標変換は viewer の窓口として出す。ui/ は geometry/ を直接掴まず、ここから取る（層: ui → viewer → geometry）
 export { ndcFromPointer, pxFromNdc, toModel, toScene } from '../geometry/coords';
@@ -16,6 +19,8 @@ const FIT_DIRECTION = new Vector3(-0.9, 0.7, 1).normalize();
 const FIT_DISTANCE_FACTOR = 1.3;
 /** カメラが地面の下に潜らない上限（天頂からの角度）。ほぼ真上までは許す */
 const MAX_POLAR_ANGLE = Math.PI / 2 - 0.05;
+/** 「正面の壁を透かす」の不透明度。稜線は残るので、輪郭で位置は分かる */
+const SEE_THROUGH_OPACITY = 0.15;
 
 /**
  * three.js のシーン一式（設計書 §2.3・§6.7）。
@@ -36,6 +41,13 @@ export class Viewer {
   private readonly onFrame: (() => void)[] = [];
   private readonly onBuilt: ((built: BuiltBuilding, model: BuildingModel) => void)[] = [];
   private readonly resizeObserver: ResizeObserver;
+  /** 「正面の壁を透かす」の状態。ON の間は毎フレーム、カメラに向いている外壁の材質を差し替える */
+  private seeThrough = false;
+  /** 半透明の壁の材質。1 つ作って共有し、`dispose` で捨てる（`disposeBuilding` は共有材質を触らない） */
+  private readonly seeThroughMaterial = new MeshLambertMaterial({ color: 0xe6e6e6, transparent: true, opacity: SEE_THROUGH_OPACITY, depthWrite: false });
+  /** 現在の建物の外壁 Mesh と、外壁芯の外接矩形の中心（建物座標 mm）。`setModel` のたびに取り直す */
+  private exteriorWalls: Mesh[] = [];
+  private buildingCenter: Vec2 = { x: 0, y: 0 };
 
   constructor(private readonly container: HTMLElement) {
     this.scene.background = new Color(0xfafafa);
@@ -70,6 +82,7 @@ export class Viewer {
       this.frame = requestAnimationFrame(loop);
       this.controls.update();
       this.onFrame.forEach((fn) => fn());
+      this.updateSeeThrough();
       this.renderer.render(this.scene, this.camera);
       this.labelRenderer.render(this.scene, this.camera);
     };
@@ -94,7 +107,46 @@ export class Viewer {
     }
     this.built = buildBuilding(model);
     this.scene.add(this.built.group);
+    this.exteriorWalls = this.built.group.children.filter((o): o is Mesh => o instanceof Mesh && o.name === 'wall' && (o.userData as WallUserData).exterior);
+    const points = this.exteriorWalls.flatMap((m) => { const d = m.userData as WallUserData; return [d.a, d.b]; });
+    if (points.length > 0) {
+      const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+      this.buildingCenter = { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
+    }
     this.onBuilt.forEach((fn) => fn(this.built!, model));
+  }
+
+  /** 「正面の壁を透かす」の ON/OFF。OFF にした瞬間に全部の壁を共有材質へ戻す */
+  setSeeThrough(on: boolean): void {
+    if (on === this.seeThrough) return;
+    this.seeThrough = on;
+    if (!on) for (const m of this.exteriorWalls) m.material = MATERIALS.body;
+  }
+
+  /** いま半透明になっている壁の id（E2E の確認用） */
+  seeThroughWalls(): string[] {
+    return this.exteriorWalls.filter((m) => m.material === this.seeThroughMaterial).map((m) => (m.userData as WallUserData).wallId);
+  }
+
+  /** カメラの方位角（度）を注視点まわりで指定する。距離と仰角はそのまま（E2E がカメラを回すのに使う） */
+  setCameraAzimuth(deg: number): void {
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const spherical = new Spherical().setFromVector3(offset);
+    spherical.theta = (deg * Math.PI) / 180;
+    this.camera.position.copy(this.controls.target).add(offset.setFromSpherical(spherical));
+    this.controls.update();
+  }
+
+  /**
+   * 毎フレーム: ON なら外壁ごとに「外向き法線 · (カメラ − 壁の中点) > 0」で正面かを判定し、材質を切り替える。
+   * 材質の参照を差し替えるだけなので、ジオメトリは触らない
+   */
+  private updateSeeThrough(): void {
+    if (!this.seeThrough) return;
+    for (const m of this.exteriorWalls) {
+      const d = m.userData as WallUserData;
+      m.material = wallFacesCamera(d.a, d.b, this.buildingCenter, this.camera.position) ? this.seeThroughMaterial : MATERIALS.body;
+    }
   }
 
   /** 建物全体が収まるようにカメラを寄せる。ブロック追加時に呼ぶ（§6.7） */
@@ -132,6 +184,7 @@ export class Viewer {
     this.resizeObserver.disconnect();
     this.controls.dispose();
     if (this.built) disposeBuilding(this.built.group);
+    this.seeThroughMaterial.dispose();
     this.renderer.forceContextLoss();
     this.renderer.dispose();
     this.renderer.domElement.remove();

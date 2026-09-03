@@ -4,10 +4,13 @@ import type { BuildingModel, Plan2D } from '../model/types';
 
 export type Mode = 'idle' | 'select2d' | 'drawRect';
 
-/** アプリ全体の状態。`model` は不変の BuildingModel 1 つ（設計書 §4.2） */
-export interface AppState { model: BuildingModel; mode: Mode; plan2d?: Plan2D; notice?: string; busy?: string }
+/**
+ * アプリ全体の状態。`model` は不変の BuildingModel 1 つ（設計書 §4.2）。
+ * `seeThrough` はカメラに向いている外壁を半透明にする表示切替（モデルには含めない）
+ */
+export interface AppState { model: BuildingModel; mode: Mode; seeThrough: boolean; plan2d?: Plan2D; notice?: string; busy?: string }
 
-let state: AppState = { model: createBuilding(), mode: 'idle' };
+let state: AppState = { model: createBuilding(), mode: 'idle', seeThrough: false };
 const listeners = new Set<() => void>();
 
 /** React と viewer が共有する外部ストア。React 側は `useAppState`、viewer 側は `subscribe` で読む */

@@ -34,9 +34,14 @@ const WALL_JOIN_TOLERANCE = 1;
 
 export interface BuiltBuilding { group: Group; roofGeom?: RoofGeom }
 
+/** 壁 Mesh の `userData`。壁芯は建物座標（mm、階の offset 込み） */
+export interface WallUserData { wallId: string; a: Vec2; b: Vec2; exterior: boolean }
+
 /**
  * BuildingModel → three.js の Group。毎回すべて作り直す（設計書 §4.2）。
- * 子の `name` は foundation / slab / wall / stair / decor / roof / roofEdge。壁は `userData.wallId` を持つ
+ * 子の `name` は foundation / slab / wall / stair / decor / roof / roofEdge。
+ * 壁は `userData` に `wallId`・壁芯の両端 `a` `b`（建物座標 mm、階の offset 込み）・`exterior` を持つ（`WallUserData`）。
+ * viewer 側の「正面の壁を透かす」がこれで外向き法線を出す
  */
 export function buildBuilding(model: BuildingModel): BuiltBuilding {
   const group = new Group();
@@ -56,7 +61,8 @@ export function buildBuilding(model: BuildingModel): BuiltBuilding {
     for (const w of floor.plan.walls) {
       const useRoof = roofGeom !== undefined && floor === top && w.exterior;
       const mesh = solidMesh(wallGeometry(w, floor.plan.walls, floor.plan.openings.filter((o) => o.wallId === w.id), H, floor, useRoof ? roofGeom : undefined));
-      mesh.userData.wallId = w.id;
+      const wallData: WallUserData = { wallId: w.id, a: shiftPoint(w.a, floor.offset), b: shiftPoint(w.b, floor.offset), exterior: w.exterior };
+      mesh.userData = wallData;
       group.add(named(mesh, 'wall'));
     }
     const holeSet = new Set(slabHoles.map((h) => h.stairIndex));

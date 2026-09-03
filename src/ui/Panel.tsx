@@ -71,6 +71,10 @@ export function Panel() {
           <input type="number" step={10} min={0} value={s.model.floor1Level} onChange={(e) => { if (e.target.value !== '') store.updateModel((m) => setFloor1Level(m, Number(e.target.value))); }} />
           mm
         </label>
+        <div className="row">
+          <button onClick={() => store.set({ seeThrough: !s.seeThrough })}>{s.seeThrough ? '正面の壁を戻す' : '正面の壁を透かす'}</button>
+        </div>
+        <p className="hint">カメラに向いている外壁だけを半透明にします。回すと透ける壁が入れ替わります。</p>
       </section>
       <section>
         <h3>屋根</h3>

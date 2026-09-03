@@ -24,6 +24,12 @@ export interface AppHooks {
   roofGeom: () => RoofGeom | undefined;
   /** 青ハンドルの画面位置（キャンバス左上からの px）。ドラッグの起点探しに使う。ハンドルは最上階にしか無いので、下の階は undefined */
   handleScreen: (floorId: string) => { x: number; y: number } | undefined;
+  /** 「正面の壁を透かす」の切替（パネルのボタンと同じ） */
+  setSeeThrough: (on: boolean) => void;
+  /** 直前の描画で半透明になっている壁 id の一覧。切替やカメラ移動の後は 1 フレーム待ってから読む */
+  seeThroughWalls: () => string[];
+  /** カメラの方位角（度）を注視点まわりで変える。距離と仰角は変えない */
+  setCameraAzimuth: (deg: number) => void;
 }
 
 declare global {
@@ -61,5 +67,8 @@ export function installTestHooks(viewer: Viewer): void {
       const px = pxFromNdc(p, { width: el.clientWidth, height: el.clientHeight });
       return { x: px.x, y: px.y };
     },
+    setSeeThrough: (on) => store.set({ seeThrough: on }),
+    seeThroughWalls: () => viewer.seeThroughWalls(),
+    setCameraAzimuth: (deg) => viewer.setCameraAzimuth(deg),
   };
 }

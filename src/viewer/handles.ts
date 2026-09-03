@@ -89,13 +89,16 @@ export class HandleController {
     this.viewer.scene.remove(this.label);
   }
 
-  /** モデルからハンドルを作り直す */
+  /**
+   * モデルからハンドルを作り直す。
+   * 青ハンドルは最上階にだけ出す。全階に出すと、階を足した直後（topZ = baseZ）は下の階のハンドルと
+   * スラブ厚 100 mm しか離れず画面上で重なり、2 階のつもりで掴んだ下半分が 1 階に当たって 1 階が伸びてしまう
+   */
   private rebuild(model: BuildingModel): void {
     this.viewer.handles.clear();
-    for (const floor of model.floors) {
-      const corner = southWestCorner(floor);
-      if (corner) this.add(GEOMETRY.floor, 'floor', toScene(corner.x, corner.y, floor.topZ), { kind: 'floor', floorId: floor.id });
-    }
+    const top = model.floors[model.floors.length - 1];
+    const corner = top && southWestCorner(top);
+    if (top && corner) this.add(GEOMETRY.floor, 'floor', toScene(corner.x, corner.y, top.topZ), { kind: 'floor', floorId: top.id });
     const roofGeom = this.viewer.built?.roofGeom;
     if (model.roof && roofGeom) {
       const [a, b] = roofGeom.ridge;
@@ -253,7 +256,7 @@ export class HandleController {
 }
 
 /**
- * 青ハンドルの位置 = 外形 bbox の南西角（平面図座標 + offset）。
+ * 青ハンドルの位置 = 最上階の外形 bbox の南西角（平面図座標 + offset）。
  * 外形が空なら外壁芯の bbox、外壁も無ければハンドルを出さない（undefined）
  */
 function southWestCorner(floor: FloorBlock): { x: number; y: number } | undefined {

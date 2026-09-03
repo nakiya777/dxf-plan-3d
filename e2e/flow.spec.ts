@@ -168,6 +168,33 @@ test('青ハンドルの上ドラッグでラベルが「壁の高さ x.xx m」�
   await page.mouse.up();
 });
 
+test('2 階建てでは青ハンドルは最上階にだけ出て、上ドラッグしても 1 階の topZ が変わらない', async ({ page }) => {
+  await page.goto('/');
+  await loadAndSelect(page, FIXTURE, F1);
+  await page.evaluate((id) => window.__app.setTopZ(id, 3650), (await page.evaluate(() => window.__app.getModel().floors[0])).id);
+  await loadAndSelect(page, FIXTURE, F2);
+  await waitFrames(page);
+  const [lower, upper] = await page.evaluate(() => window.__app.getModel().floors);
+  // 1 階にはハンドルが無く、フックは最上階（2 階）の位置だけを返す
+  expect(await page.evaluate((id) => window.__app.handleScreen(id), lower.id)).toBeUndefined();
+  const h = (await page.evaluate((id) => window.__app.handleScreen(id), upper.id))!;
+  expect(h).toBeDefined();
+  const box = (await page.locator('canvas').boundingBox())!;
+  const x = box.x + h.x;
+  const y = box.y + h.y;
+  await page.mouse.move(x, y);
+  await expect(page.locator('.label')).toContainText('建物の高さ');
+  await page.mouse.down();
+  await page.mouse.move(x, y - 150, { steps: 10 });
+  await expect(page.locator('.label')).toContainText(/壁の高さ \d\.\d\d m/);
+  await page.mouse.up();
+  const after = await page.evaluate(() => window.__app.getModel().floors);
+  expect(after[1].topZ).toBeGreaterThan(upper.topZ);
+  expect(after[0].topZ).toBe(lower.topZ);
+  expect(after[0].baseZ).toBe(lower.baseZ);
+  expect(after[1].baseZ).toBe(upper.baseZ);   // 2 階スラブ（1 階天井）は動かない
+});
+
 test('ドラッグ中の描画が 30 fps 以上（自作 DXF 2 階建て、A11）', async ({ page }) => {
   await page.goto('/');
   await loadAndSelect(page, FIXTURE, F1);

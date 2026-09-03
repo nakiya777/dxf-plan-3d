@@ -22,7 +22,7 @@ export interface AppHooks {
   setRoof: (p: RoofSliderParams) => void;
   /** 直前の描画で解いた屋根形状（`ridgeZ` `planes` `ridge` `edges`）。屋根が無ければ undefined */
   roofGeom: () => RoofGeom | undefined;
-  /** 青ハンドルの画面位置（キャンバス左上からの px）。ドラッグの起点探しに使う */
+  /** 青ハンドルの画面位置（キャンバス左上からの px）。ドラッグの起点探しに使う。ハンドルは最上階にしか無いので、下の階は undefined */
   handleScreen: (floorId: string) => { x: number; y: number } | undefined;
 }
 

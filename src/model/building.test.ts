@@ -83,6 +83,14 @@ describe('階の追加と高さ', () => {
     expect(m.floors[0].topZ).toBe(550);
     expect(m.floors[1].baseZ).toBe(650);
   });
+  it('最上階の setTopZ は下の階の baseZ・topZ を一切変えない', () => {
+    let m = addFloor(setTopZ(addFloor(createBuilding(), plan()), 'f1', 3650), plan(20000, 0));
+    const lowerBefore = m.floors[0];
+    m = setTopZ(m, 'f2', m.floors[1].baseZ + 2800);
+    expect(m.floors[1]).toMatchObject({ baseZ: 3750, topZ: 6550 });
+    expect(m.floors[0].baseZ).toBe(lowerBefore.baseZ);
+    expect(m.floors[0].topZ).toBe(lowerBefore.topZ);
+  });
   it('setTopZ は上の階の高さ（top − base）を保つ', () => {
     let m = addFloor(addFloor(createBuilding(), plan()), plan(20000, 0));
     m = setTopZ(m, 'f2', m.floors[1].baseZ + 2800);

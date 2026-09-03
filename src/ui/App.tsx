@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { addFloor, addRoof, createBuilding } from '../model/building';
 import type { PlanModel } from '../model/types';
 import { store } from '../state/store';
+import { HandleController } from '../viewer/handles';
 import { Viewer } from '../viewer/scene';
 
 /**
@@ -38,10 +39,11 @@ export function App() {
     const el = containerRef.current!;
     const viewer = new Viewer(el);
     const unsubscribe = store.subscribe(() => viewer.setModel(store.get().model));
+    const handles = new HandleController(viewer);
     viewer.setModel(store.get().model);
     viewer.fitToBuilding();
     // StrictMode の二重マウントに備え、必ず WebGL コンテキストを捨てる
-    return () => { unsubscribe(); viewer.dispose(); };
+    return () => { unsubscribe(); handles.dispose(); viewer.dispose(); };
   }, []);
 
   return <div ref={containerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }} />;

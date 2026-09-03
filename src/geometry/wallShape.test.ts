@@ -24,7 +24,10 @@ describe('buildWallProfile', () => {
   });
   it('H=3000 ではドアも窓も穴になる', () => {
     const p = buildWallProfile(5000, 3000, [door, win]);
-    expect(p.holes).toHaveLength(2);
+    expect(p.holes).toEqual([
+      [{ s: 1000, z: 0 }, { s: 1800, z: 0 }, { s: 1800, z: 2000 }, { s: 1000, z: 2000 }],
+      [{ s: 2500, z: 900 }, { s: 3700, z: 900 }, { s: 3700, z: 2000 }, { s: 2500, z: 2000 }],
+    ]);
     expect(p.outline).toEqual([{ s: 0, z: 0 }, { s: 5000, z: 0 }, { s: 5000, z: 3000 }, { s: 0, z: 3000 }]);
   });
   it('head = H の開口は切り欠き（穴が外形に触れると ExtrudeGeometry が崩れる）', () => {

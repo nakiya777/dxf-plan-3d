@@ -1,10 +1,10 @@
-import { Box3, LineBasicMaterial, LineSegments, Mesh, MeshLambertMaterial, Vector3 } from 'three';
-import { describe, expect, it } from 'vitest';
+import { Box3, BufferGeometry, LineBasicMaterial, LineSegments, Mesh, MeshLambertMaterial, Vector3 } from 'three';
+import { describe, expect, it, vi } from 'vitest';
 import { addFloor, addRoof, createBuilding, rotateRidge, setTopZ } from '../model/building';
 import { recognizePlan } from '../recognize';
 import { planInBox } from '../recognize/testing';
 import type { BuildingModel, PlanModel, Stair, Wall } from '../model/types';
-import { buildBuilding, prismGeometry, roofGeometry, stairwellHoles, wallGeometry } from './build';
+import { MATERIALS, buildBuilding, disposeBuilding, prismGeometry, roofGeometry, stairwellHoles, wallGeometry } from './build';
 import { MODEL_TO_SCENE, SCENE_TO_MODEL, toScene } from './coords';
 
 const wall = (id: string, x1: number, y1: number, x2: number, y2: number, exterior = true, thickness = 150): Wall =>
@@ -113,6 +113,21 @@ describe('buildBuilding', () => {
     expect(box(slabs[1]).min.y).toBeCloseTo(3.35, 6);
     expect(box(slabs[1]).max.y).toBeCloseTo(3.45, 6);
     expect(box(g.group).max.y).toBeCloseTo(6.0, 6);
+  });
+  it('disposeBuilding は稜線の子も含めて全ジオメトリを捨て、共有の MATERIALS は生きている', () => {
+    let m = oneFloor({ ...plan, stairs: [straightStair] });
+    m = addRoof(setTopZ(addFloor(m, plan), 'f2', 6000));
+    const g = buildBuilding(m);
+    const geometries: BufferGeometry[] = [];
+    g.group.traverse((o) => { if (o instanceof Mesh || o instanceof LineSegments) geometries.push(o.geometry); });
+    expect(geometries.length).toBeGreaterThan(g.group.children.length); // 稜線の子が含まれる
+    const disposed: BufferGeometry[] = [];
+    for (const geo of geometries) geo.addEventListener('dispose', () => disposed.push(geo));
+    const materialDisposes = Object.values(MATERIALS).map((mat) => vi.spyOn(mat, 'dispose'));
+    disposeBuilding(g.group);
+    expect(disposed.length).toBe(geometries.length);
+    for (const spy of materialDisposes) expect(spy).not.toHaveBeenCalled();
+    materialDisposes.forEach((spy) => spy.mockRestore());
   });
 });
 
@@ -330,12 +345,40 @@ describe('階段と吹き抜け', () => {
 });
 
 describe('prismGeometry', () => {
+  const outer = [{ x: 0, y: 0 }, { x: 5000, y: 0 }, { x: 5000, y: 3000 }, { x: 0, y: 3000 }];
+  const hole = [{ x: 1000, y: 1000 }, { x: 2000, y: 1000 }, { x: 2000, y: 2000 }, { x: 1000, y: 2000 }];
+  /** 上面（シーン y = z1）の三角形のうち、モデル座標 (x, y) を含むものがあるか */
+  const topFaceCovers = (g: BufferGeometry, z1: number, x: number, y: number) => {
+    const pos = g.getAttribute('position');
+    const sx = x / 1000, sz = -y / 1000;
+    const cross = (ax: number, az: number, bx: number, bz: number) => ax * bz - az * bx;
+    for (let i = 0; i < pos.count; i += 3) {
+      if ([0, 1, 2].some((k) => Math.abs(pos.getY(i + k) - z1 / 1000) > 1e-6)) continue;
+      const px = [0, 1, 2].map((k) => pos.getX(i + k)), pz = [0, 1, 2].map((k) => pos.getZ(i + k));
+      const d = [0, 1, 2].map((k) => cross(px[(k + 1) % 3] - px[k], pz[(k + 1) % 3] - pz[k], sx - px[k], sz - pz[k]));
+      if (d.every((v) => v >= -1e-9) || d.every((v) => v <= 1e-9)) return true;
+    }
+    return false;
+  };
   it('穴付きの板は穴無しより頂点が多く、index は付かない', () => {
-    const outer = [{ x: 0, y: 0 }, { x: 5000, y: 0 }, { x: 5000, y: 3000 }, { x: 0, y: 3000 }];
     const solid = prismGeometry(outer, 0, 100);
-    const holed = prismGeometry(outer, 0, 100, [[{ x: 1000, y: 1000 }, { x: 2000, y: 1000 }, { x: 2000, y: 2000 }, { x: 1000, y: 2000 }]]);
+    const holed = prismGeometry(outer, 0, 100, [hole]);
     expect(solid.getIndex()).toBeNull();
     expect(holed.getAttribute('position').count).toBeGreaterThan(solid.getAttribute('position').count);
+  });
+  it('穴の内側の点には上面の三角形が無く、外側にはある', () => {
+    const holed = prismGeometry(outer, 0, 100, [hole]);
+    expect(topFaceCovers(holed, 100, 1500, 1500)).toBe(false);
+    expect(topFaceCovers(holed, 100, 500, 500)).toBe(true);
+    expect(topFaceCovers(holed, 100, 2500, 1500)).toBe(true);
+    expect(topFaceCovers(prismGeometry(outer, 0, 100), 100, 1500, 1500)).toBe(true);
+  });
+  it('板は z0 〜 z1 に置かれる', () => {
+    const g = prismGeometry(outer, 450, 550);
+    g.computeBoundingBox();
+    expect(g.boundingBox!.min.y).toBeCloseTo(0.45, 6);
+    expect(g.boundingBox!.max.y).toBeCloseTo(0.55, 6);
+    expect(g.boundingBox!.min.z).toBeCloseTo(-3, 6);
   });
 });
 

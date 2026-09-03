@@ -75,6 +75,14 @@ export function buildBuilding(model: BuildingModel): BuiltBuilding {
   return { group, roofGeom };
 }
 
+/**
+ * `buildBuilding` が作った Group を捨てる。ジオメトリだけ捨て、`MATERIALS` は共有なので触らない。
+ * 稜線の `LineSegments` は Mesh の子なので `traverse` で辿る
+ */
+export function disposeBuilding(group: Group): void {
+  group.traverse((o) => { if (o instanceof Mesh || o instanceof LineSegments) o.geometry.dispose(); });
+}
+
 const named = <T extends { name: string }>(o: T, name: string): T => { o.name = name; return o; };
 const shiftPoint = (p: Vec2, o: Vec2): Vec2 => ({ x: p.x + o.x, y: p.y + o.y });
 const wallLength = (w: Wall) => Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
@@ -92,7 +100,7 @@ export function prismGeometry(outline: Polygon, z0: number, z1: number, holes: P
   const shape = new Shape(outline.map((p) => new Vector2(p.x, p.y)));
   for (const h of holes) shape.holes.push(new Path(h.map((p) => new Vector2(p.x, p.y))));
   const g = new ExtrudeGeometry(shape, { depth: z1 - z0, bevelEnabled: false });
-  g.applyMatrix4(new Matrix4().makeTranslation(0, 0, z0)).applyMatrix4(MODEL_TO_SCENE);
+  g.applyMatrix4(MODEL_TO_SCENE.clone().multiply(new Matrix4().makeTranslation(0, 0, z0)));
   return g;
 }
 
@@ -147,7 +155,8 @@ export function wallGeometry(w: Wall, walls: Wall[], openings: Opening[], H: num
       .filter((t): t is number => t !== undefined)
       .map((t) => t * L + ext0);
   }
-  const profile = buildWallProfile(L + ext0 + ext1, H, openings.map((o) => ({ ...o, offset: o.offset + ext0 })), topProfile, sampleAt);
+  const shifted = openings.map((o) => ({ ...o, offset: o.offset + ext0 }));
+  const profile = buildWallProfile(L + ext0 + ext1, H, shifted, topProfile, sampleAt);
   const shape = new Shape(profile.outline.map((q) => new Vector2(q.s, q.z)));
   for (const h of profile.holes) shape.holes.push(new Path(h.map((q) => new Vector2(q.s, q.z))));
   const g = new ExtrudeGeometry(shape, { depth: w.thickness, bevelEnabled: false });
@@ -159,7 +168,7 @@ export function wallGeometry(w: Wall, walls: Wall[], openings: Opening[], H: num
     0, 1, 0, floor.baseZ,
     0, 0, 0, 1,
   );
-  g.applyMatrix4(local).applyMatrix4(MODEL_TO_SCENE);
+  g.applyMatrix4(MODEL_TO_SCENE.clone().multiply(local));
   return g;
 }
 

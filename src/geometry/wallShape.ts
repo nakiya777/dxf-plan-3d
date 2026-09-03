@@ -44,6 +44,7 @@ export function buildWallProfile(
   const insideNotch = (x: number) => notches.find((n) => x > n.offset && x < n.offset + n.width);
   let s = 0;
   while (s < L) {
+    // s は切り欠きの境界かその手前で止まるので、0.5 mm 先を覗けば切り欠きの区間に入ったかが決まる
     const notch = insideNotch(s + 0.5);
     if (notch) {
       push(notch.offset, top(notch.offset));

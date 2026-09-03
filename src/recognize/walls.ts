@@ -35,6 +35,9 @@ interface Run {
   s1: number;
 }
 
+/** 外周の頂点を落とす外積の閾値（mm²）。1e-9 のずれで生まれる頂点は落とし、1 mm × 1 mm の角は残す */
+const COLLINEAR_EPS = 0.5;
+
 const rhoCenter = (r: Run) => (r.rhoLo + r.rhoHi) / 2;
 
 /**
@@ -172,7 +175,24 @@ export function computeOutline(walls: Wall[]): Polygon {
       { x: box.minX, y: box.maxY },
     ];
   }
-  return outer.slice(0, -1).map(([x, y]) => ({ x, y }));
+  return dropCollinear(outer.slice(0, -1).map(([x, y]) => ({ x, y })));
+}
+
+/**
+ * 重複点と、前後の点と一直線に並ぶ点を落とす。
+ * union は矩形どうしが接する位置に頂点を残すので（閉じた矩形の外周が 4 点でなく 8 点になる）、外周は角だけにする
+ */
+function dropCollinear(poly: Polygon): Polygon {
+  const out: Vec2[] = [];
+  const n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const prev = out.length > 0 ? out[out.length - 1] : poly[(i - 1 + n) % n];
+    const p = poly[i];
+    const next = poly[(i + 1) % n];
+    const cross = (p.x - prev.x) * (next.y - p.y) - (p.y - prev.y) * (next.x - p.x);
+    if (Math.abs(cross) > COLLINEAR_EPS) out.push(p);
+  }
+  return out;
 }
 
 /**

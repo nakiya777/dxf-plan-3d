@@ -1,0 +1,35 @@
+import type { Plan2D, PlanEntity, PlanModel } from '../model/types';
+import { detectAxes } from './axes';
+import { extractBands } from './bands';
+import { toSegments } from './geom';
+import { detectOpenings } from './openings';
+import { detectStairs } from './stairs';
+import { bandsToWalls, computeOutline, decideWallLayers, markExterior } from './walls';
+
+/**
+ * Plan2D → PlanModel。設計書 §7.2 の手順を順に呼ぶ合成関数で、認識層の唯一の出口。
+ *
+ * 壁が 1 本も取れなければ `warnings` に 1 行入れ、`outline` は空にして続行する（§7.2「失敗時の振る舞い」）。
+ * 開口・階段・通り芯・飾り線はそのまま取るので、板の上に線を描くことはできる
+ */
+export function recognizePlan(plan: Plan2D): PlanModel {
+  const segs = toSegments(plan.entities);
+  const bands = extractBands(segs);
+  const wallLayers = decideWallLayers(bands);
+  const rawWalls = bandsToWalls(bands.wallBands, wallLayers);
+  const outline = computeOutline(rawWalls);
+  const exteriorWalls = markExterior(rawWalls, outline);
+
+  // `usedLineIds` の id は `toSegments` に渡した配列の添字なので、`plan.entities[i]` と対応する
+  const nonWallSegs = segs.filter((s) => !bands.usedLineIds.has(s.id));
+  const { walls, openings } = detectOpenings(exteriorWalls, plan.entities, bands.symbols, wallLayers, nonWallSegs);
+  const texts = plan.entities.filter((e): e is Extract<PlanEntity, { kind: 'text' }> => e.kind === 'text');
+  const stairs = detectStairs(nonWallSegs, texts);
+  const axes = detectAxes(plan.entities);
+  // 文字は 3D に描かない（§7.2 手順 8）。壁に使った線を除き、弧・円は全部残す（ドアの弧も床面に描く）
+  const decorLines = plan.entities.filter((e, i) => e.kind !== 'text' && !(e.kind === 'line' && bands.usedLineIds.has(i)));
+  const warnings = walls.length === 0 ? ['壁を認識できませんでした。レイヤー名を確認してください'] : [];
+  return { walls, openings, stairs, axes, outline, decorLines, warnings };
+}
+
+export { selectRegion } from './region';

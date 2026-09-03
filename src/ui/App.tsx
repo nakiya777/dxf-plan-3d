@@ -30,7 +30,7 @@ export function App() {
     // E2E 用フック（window.__app）。UI からは使わない
     installTestHooks(viewer);
     // StrictMode の二重マウントに備え、必ず WebGL コンテキストを捨てる
-    return () => { unsubscribe(); rectDraw.dispose(); handles.dispose(); viewer.dispose(); };
+    return () => { unsubscribe(); rectDraw.dispose(); handles.dispose(); viewer.dispose(); delete (window as { __app?: unknown }).__app; };
   }, []);
 
   // 矩形描画は Esc で戻る（§6.6）。2D 選択ビューの Esc は SelectView が持つ

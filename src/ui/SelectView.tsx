@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { addFloor } from '../model/building';
-import type { Box2, PlanEntity, PlanModel, Vec2 } from '../model/types';
-import { recognizePlan, selectRegion } from '../recognize';
+import type { Box2, PlanEntity, Vec2 } from '../model/types';
+import { selectRegion } from '../recognize';
 import { store, useAppState } from '../state/store';
+import { commitRegion, EMPTY_REGION_NOTICE } from './commitRegion';
 
 /** 青塗りを見せてから認識に入るまでの時間（設計書 §6.2 手順 4） */
 const HIGHLIGHT_MS = 300;
-/** 壁の帯がこれ以上離れた 2 群に分かれていれば、平面図が 2 枚入った疑い（§10） */
-const TWO_PLANS_GAP_MM = 3000;
 
 /** 全画面の 2D ビュー。矩形ドラッグで平面図を囲む（設計書 §6.2） */
 export function SelectView() {
@@ -71,17 +69,14 @@ export function SelectView() {
     setDrag(null);
     const region = selectRegion(plan, rect);
     if (region.entities.length === 0) {
-      store.set({ notice: '範囲に図形がありません。囲み直してください' });
+      store.set({ notice: EMPTY_REGION_NOTICE });
       return;
     }
     setSelected(region.bbox);
     store.set({ busy: '読み込み中…' });
     timer.current = setTimeout(() => {
       timer.current = null;
-      const planModel = recognizePlan(region);
-      // 壁 0 本の注意と 2 枚混入の疑い（壁が 2 群）は両立しないので、先頭 1 件を出せば足りる
-      const notices = [...planModel.warnings, ...(twoPlansSuspected(planModel) ? ['平面図が 2 枚入っている可能性があります'] : [])];
-      store.set((st) => ({ model: addFloor(st.model, planModel), mode: 'idle', plan2d: undefined, busy: undefined, notice: notices[0] }));
+      commitRegion(region);
     }, HIGHLIGHT_MS);
   };
 
@@ -119,20 +114,3 @@ function Entity({ e }: { e: PlanEntity }) {
   return <text x={e.at.x} y={-e.at.y} fontSize={e.height} fill="#2a8f3c">{e.text}</text>;
 }
 
-/**
- * 平面図が 2 枚入った疑い（§10）: 壁の占める区間を X・Y それぞれで合併し、
- * 3 m 以上の空白を挟んで 2 群に分かれていれば真。端点の間隔で見ると 1 部屋の幅（3.6 m など）で誤検出するため、区間の合併で見る
- */
-function twoPlansSuspected(m: PlanModel): boolean {
-  return (['x', 'y'] as const).some((axis) => {
-    const intervals = m.walls
-      .map((w) => [Math.min(w.a[axis], w.b[axis]), Math.max(w.a[axis], w.b[axis])] as [number, number])
-      .sort((p, q) => p[0] - q[0]);
-    let reach = -Infinity;
-    for (const [lo, hi] of intervals) {
-      if (reach !== -Infinity && lo - reach > TWO_PLANS_GAP_MM) return true;
-      reach = Math.max(reach, hi);
-    }
-    return false;
-  });
-}

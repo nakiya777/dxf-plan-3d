@@ -68,12 +68,12 @@ const uShape = (): Wall[] => {
 describe('壁の組み立て', () => {
   it('forest-s 1 階: 壁レイヤーは _0-1_1 だけ', () => {
     const r = extractBands(toSegments(forest1F()));
-    expect([...decideWallLayers(r.candidates)]).toEqual(['_0-1_1']);
+    expect([...decideWallLayers(r)]).toEqual(['_0-1_1']);
   });
 
   it('forest-s 1 階: 外壁芯の外接矩形が 9,100 × 5,915（±30）', () => {
     const r = extractBands(toSegments(forest1F()));
-    const walls = bandsToWalls(r.walls, decideWallLayers(r.candidates));
+    const walls = bandsToWalls(r.walls, decideWallLayers(r));
     const box = centerlineBBox(markExterior(walls, computeOutline(walls)).filter((w) => w.exterior));
     expect(box.maxX - box.minX).toBeCloseTo(9100, -1.5);
     expect(box.maxY - box.minY).toBeCloseTo(5915, -1.5);
@@ -85,7 +85,7 @@ describe('壁の組み立て', () => {
     // 和集合の最大の環は面積 8.35e6 mm²（全壁矩形 bbox の 15%）の細い帯にしかならないので、
     // これを外形に採ると内壁までほぼ全部が外壁になる（34 本中 31 本）
     const r = extractBands(toSegments(forest1F()));
-    const walls = bandsToWalls(r.walls, decideWallLayers(r.candidates));
+    const walls = bandsToWalls(r.walls, decideWallLayers(r));
     const outline = computeOutline(walls);
     expect(outline).toHaveLength(4);
     const exterior = markExterior(walls, outline).filter((w) => w.exterior);
@@ -95,7 +95,7 @@ describe('壁の組み立て', () => {
 
   it('forest-s 1 階: 壁は 34 本で、厚さはほぼ 150 mm', () => {
     const r = extractBands(toSegments(forest1F()));
-    const walls = bandsToWalls(r.walls, decideWallLayers(r.candidates));
+    const walls = bandsToWalls(r.walls, decideWallLayers(r));
     expect(walls).toHaveLength(34);
     expect(walls.filter((w) => Math.abs(w.thickness - 150) < 1)).toHaveLength(32);
   });
@@ -201,7 +201,7 @@ describe('帯から壁へ', () => {
 
   it('隙間 40 mm の共線 2 帯は 1 本の壁につながる', () => {
     const r = twoRuns(40);
-    const walls = bandsToWalls(r.walls, decideWallLayers(r.candidates));
+    const walls = bandsToWalls(r.walls, decideWallLayers(r));
     expect(walls).toHaveLength(1);
     expect(walls[0].a.x).toBeCloseTo(0);
     expect(walls[0].b.x).toBeCloseTo(6000);
@@ -210,17 +210,31 @@ describe('帯から壁へ', () => {
 
   it('隙間 600 mm（開口）なら壁は 2 本のまま', () => {
     const r = twoRuns(600);
-    expect(bandsToWalls(r.walls, decideWallLayers(r.candidates))).toHaveLength(2);
+    expect(bandsToWalls(r.walls, decideWallLayers(r))).toHaveLength(2);
+  });
+
+  it('壁芯が丸めの境界をまたいでも共線として 1 本になる', () => {
+    // 壁芯は 5 mm と 15 mm で差は 10 mm しかないが、20 mm 刻みで丸めるとキーが 0 と 1 に割れる。
+    // 丸めキー方式ではここで壁が 2 本に分かれる
+    const r = extractBands(
+      toSegments([
+        line('壁', 0, -70, 3000, -70),
+        line('壁', 0, 80, 3000, 80),
+        line('壁', 3040, -60, 6000, -60),
+        line('壁', 3040, 90, 6000, 90),
+      ]),
+    );
+    expect(bandsToWalls(r.walls, decideWallLayers(r))).toHaveLength(1);
   });
 
   it('壁芯の 10 mm のずれは共線として吸収する', () => {
     const r = twoRuns(40, 10);
-    expect(bandsToWalls(r.walls, decideWallLayers(r.candidates))).toHaveLength(1);
+    expect(bandsToWalls(r.walls, decideWallLayers(r))).toHaveLength(1);
   });
 
   it('壁芯が 100 mm ずれていれば共線と見なさない', () => {
     const r = twoRuns(40, 100);
-    expect(bandsToWalls(r.walls, decideWallLayers(r.candidates))).toHaveLength(2);
+    expect(bandsToWalls(r.walls, decideWallLayers(r))).toHaveLength(2);
   });
 
   it('壁レイヤー以外の帯は壁にしない', () => {
@@ -238,14 +252,14 @@ describe('帯から壁へ', () => {
 
   it('壁の id は呼び出しごとに w0 から振り直す', () => {
     const r = twoRuns(600);
-    const layers = decideWallLayers(r.candidates);
+    const layers = decideWallLayers(r);
     expect(bandsToWalls(r.walls, layers).map((w) => w.id)).toEqual(['w0', 'w1']);
     expect(bandsToWalls(r.walls, layers).map((w) => w.id)).toEqual(['w0', 'w1']);
   });
 });
 
 describe('壁レイヤーの決定', () => {
-  const bandsOf = (...entities: PlanEntity[]) => extractBands(toSegments(entities)).candidates;
+  const bandsOf = (...entities: PlanEntity[]) => extractBands(toSegments(entities));
 
   it('総延長が最大の 30% 以上あるレイヤーは壁レイヤーに加える', () => {
     // 外壁 6,000 mm と内壁 2,000 mm（33%）が別レイヤーに分かれた図面

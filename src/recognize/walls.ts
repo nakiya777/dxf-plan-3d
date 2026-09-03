@@ -1,6 +1,8 @@
+// polygon-clipping は CJS で、この名前付き import は素の Node ESM（tsx の直実行など）では解決できない。
+// vitest と Vite の解決器を前提とする（どちらでも動くことは確認済み）
 import { union, type MultiPolygon, type Ring } from 'polygon-clipping';
 import type { Box2, Polygon, Vec2, Wall } from '../model/types';
-import { totalLengthByLayer, type Band } from './bands';
+import { totalLengthByLayer, type Band, type BandResult } from './bands';
 import { CFG } from './config';
 import { fromRhoS, toSeg } from './geom';
 
@@ -9,11 +11,13 @@ import { fromRhoS, toSeg } from './geom';
  * 総延長が最大のレイヤーと、その 30% 以上あるレイヤーを採る（外壁と内壁がレイヤー分けされた図面のため）。
  * 名前が「壁」に当たるレイヤーは総延長を問わず加える。
  *
- * 渡すのは入れ子をまとめる**前**の帯（`BandResult.candidates`）。設計書 §7.0 の実測表
- * （壁 142.8 m / 建具 33.0 m / 設備 4.7 m）がその状態の値で、30% はそれに合わせた閾値
+ * 総延長を測るのは入れ子をまとめる**前**の帯（`candidates`）。設計書 §7.0 の実測表
+ * （壁 142.8 m / 建具 33.0 m / 設備 4.7 m）がその状態の値で、30% はそれに合わせた閾値。
+ * まとめた後の `walls` で測ると、仕上げ線 4 本の壁だけが 6 分の 1 に圧縮されて建具が 61% に上がり、
+ * 建具レイヤーが壁になる。`Band[]` ではなく `BandResult` を受けるのは、この取り違えを型で止めるため
  */
-export function decideWallLayers(bands: Band[]): Set<string> {
-  const total = totalLengthByLayer(bands);
+export function decideWallLayers(result: BandResult): Set<string> {
+  const total = totalLengthByLayer(result.candidates);
   const max = Math.max(0, ...total.values());
   const wallLayers = new Set<string>();
   for (const [layer, len] of total) {
@@ -149,13 +153,10 @@ export function computeOutline(walls: Wall[]): Polygon {
   const rects = bridged.map(wallRect);
   const polys = rects.map((r) => [r.map((p) => [p.x, p.y] as [number, number])]);
 
-  let merged: MultiPolygon = [];
-  try {
-    merged = union(polys[0], ...polys.slice(1));
-  } catch {
-    // polygon-clipping 0.15.7 は退化した重なりで例外を投げることがある。外形を bbox に落として続ける
-    merged = [];
-  }
+  // 例外は握り潰さない。同一矩形の重なり・面積 0 の帯・自己交差・1e-9 のずれを 600 本、
+  // いずれも union は投げないことを確認済み。投げるのは環が空か座標が NaN のときだけで、
+  // `wallRect` は必ず 4 点を返し、NaN の線は dxf 側の「1 mm 未満は捨てる」で落ちるので到達しない
+  const merged: MultiPolygon = union(polys[0], ...polys.slice(1));
   const outer = merged.map((poly) => poly[0]).sort((p, q) => ringArea(q) - ringArea(p))[0];
 
   const box = bboxOfPoints(rects.flat());

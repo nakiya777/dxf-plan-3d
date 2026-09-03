@@ -120,6 +120,29 @@ describe('帯の閾値', () => {
     expect(r.symbols).toHaveLength(0);
   });
 
+  it('窓記号に使った線も usedLineIds に入る（階段の探索が拾い直さないため）', () => {
+    const r = extractBands(
+      toSegments([line('建具', 0, 0, 1650, 0), line('建具', 0, 150, 1650, 150), line('建具', 0, 75, 1650, 75)]),
+    );
+    expect(r.walls).toHaveLength(0);
+    expect(r.symbols).toHaveLength(1);
+    expect([...r.usedLineIds].sort((p, q) => p - q)).toEqual([0, 1]);
+  });
+
+  it('わずかに傾いた線の ρ は中点で取る（始点だと厚さを取り違える）', () => {
+    // 0.24° の傾きは θ=0 に丸められる。長さの違う 2 本を始点の ρ で測ると距離 265 mm で
+    // 上限 250 mm を超え、中点で測ると 246 mm になる。中点でだけ帯になる
+    const r = extractBands(toSegments([line('壁', 0, 0, 10000, 41.9), line('壁', 0, 265, 1000, 269.19)]));
+    expect(r.walls).toHaveLength(1);
+    expect(r.walls[0].rhoHi - r.walls[0].rhoLo).toBeCloseTo(246.1, 0);
+  });
+
+  it('右から左へ引かれたほぼ水平な線も、水平線と同じ向きとして扱う', () => {
+    // 179.90° は刻みに丸めると 180 になる。0 に折り返さないと水平線と別グループに落ちる
+    const r = extractBands(toSegments([line('壁', 3000, 0, 0, 5), line('壁', 0, 150, 3000, 150)]));
+    expect(r.walls).toHaveLength(1);
+  });
+
   it('採用した帯の線は usedLineIds に入り、周期性で落ちた線は入らない', () => {
     const r = extractBands(toSegments([line('壁', 0, 0, 3000, 0), line('壁', 0, 120, 3000, 120)]));
     expect([...r.usedLineIds].sort()).toEqual([0, 1]);

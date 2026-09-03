@@ -37,6 +37,14 @@ describe('recognizePlan（自作 1 階）', () => {
     expect(m.decorLines.some((e) => e.kind === 'text')).toBe(false);
     expect(m.warnings).toHaveLength(0);
   });
+  it('壁レイヤー以外の帯（設備・家具の平行線）の線は decorLines に残る', () => {
+    const walls = [line('壁', 0, 75, 5000, 75), line('壁', 0, -75, 5000, -75), line('壁', 0, 3075, 5000, 3075), line('壁', 0, 2925, 5000, 2925)];
+    const furniture = [line('家具', 1000, 1000, 2000, 1000), line('家具', 1000, 1100, 2000, 1100)];
+    const m = recognizePlan({ entities: [...walls, ...furniture], bbox: { minX: 0, minY: -75, maxX: 5000, maxY: 3075 }, sourceName: 't' });
+    expect(m.walls).toHaveLength(2);
+    expect(m.decorLines.filter((e) => e.kind === 'line' && e.layer === '家具')).toHaveLength(2);
+    expect(m.decorLines.some((e) => e.layer === '壁')).toBe(false);
+  });
 });
 
 describe('recognizePlan（壁が無い図面）', () => {

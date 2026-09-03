@@ -5,14 +5,15 @@ import { line, planInBox } from './testing';
 
 describe('開口の認識', () => {
   /**
-   * 弧は 6 個あるが、両側の壁が認識されている（= 隙間になる）のは 3 個だけ。残り 3 個は隣の壁片が
-   * 252 mm / 227 mm / 192 mm と短く帯にならない（設計書 §7.2 手順 5 の実測と同じ原因）ので、隙間が無く開口にできない。
+   * 弧は 6 個あるが、両側の壁が認識されている（= 隙間になる）のは 2 個（694・706）だけ。残り 4 個は隣の壁片が
+   * 148 / 150 / 252 / 150 mm と短く帯にならない（設計書 §7.2 手順 5 の実測と同じ原因）ので、隙間が無く開口にできない。
+   * 885 の 2 つは弧ではなく建具レイヤーの帯（中央線付きの引き戸と、帯だけの引き戸）が隙間を埋めたもの。
    * 窓も同じ理由で左外壁の 2 つが落ち、外壁の隙間にある 5 つが取れる（2026-09-03 実測）
    */
-  it('forest-s 1 階: 開き戸 3（両側に壁がある弧）、窓 5 は外壁だけ、記号線の無い隙間は開口にしない', () => {
+  it('forest-s 1 階: 開き戸 2＋引き戸 2、窓 5 は外壁だけ、記号線の無い隙間は開口にしない', () => {
     const m = recognizePlan(planInBox('fixtures/forest-s/平面立面図.dxf', [5500, 28800, 19800, 39800]));
-    const doors = m.openings.filter((o) => o.type === 'door' && o.width >= 500);
-    expect(doors.map((o) => Math.round(o.width)).sort((p, q) => p - q)).toEqual([694, 706, 885]);
+    const doors = m.openings.filter((o) => o.type === 'door');
+    expect(doors.map((o) => Math.round(o.width)).sort((p, q) => p - q)).toEqual([694, 706, 885, 885]);
     const wallById = new Map(m.walls.map((w) => [w.id, w]));
     const windows = m.openings.filter((o) => o.type === 'window');
     expect(windows).toHaveLength(5);
@@ -62,6 +63,12 @@ describe('開口の認識（合成データ）', () => {
     const withAxis = recognizePlan({ entities: [...wall(0, 3000), ...wall(3900, 7000), line('通り芯', -1000, 0, 8000, 0)], bbox: { minX: -1000, minY: -75, maxX: 8000, maxY: 75 }, sourceName: 't' });
     expect(withAxis.walls).toHaveLength(2);
     expect(withAxis.openings).toHaveLength(0);
+  });
+  it('幅 300 mm 未満の隙間は記号があっても開口にせず、壁をつないで埋める', () => {
+    const m = recognizePlan({ entities: [...wall(0, 3000), ...wall(3200, 7000), line('建具', 3000, 30, 3200, 30)], bbox: { minX: 0, minY: -75, maxX: 7000, maxY: 75 }, sourceName: 't' });
+    expect(m.walls).toHaveLength(1);
+    expect(m.walls[0]).toMatchObject({ a: { x: 0, y: 0 }, b: { x: 7000, y: 0 } });
+    expect(m.openings).toHaveLength(0);
   });
   it('隙間に収まる記号線があれば開口になり、壁は 1 本につながる（外壁なので幅 900 の腰窓）', () => {
     const m = recognizePlan({ entities: [...wall(0, 3000), ...wall(3900, 7000), line('建具', 3000, 30, 3900, 30)], bbox: { minX: 0, minY: -75, maxX: 7000, maxY: 75 }, sourceName: 't' });

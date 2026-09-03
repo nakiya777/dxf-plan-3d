@@ -58,8 +58,11 @@ const arcEnds = (a: Arc): Vec2[] =>
 /**
  * 壁の隙間を開口にする（設計書 §7.2 手順 4）。判定は上から順に当てる
  * 1. 隙間の中に 60–100°（または 180° 前後）の弧の中心が壁芯の近くにある → 開き戸（外壁でも）。幅 = 半径、両開きは直径
- * 2. 中央線付きの帯（`symbols`）か、壁レイヤー以外の線が隙間を埋めている → 外壁なら窓、内壁ならドア（引き戸・折れ戸）
+ * 2. 記号の帯（`symbols`）か、壁レイヤー以外の線が隙間を埋めている → 外壁なら窓、内壁ならドア（引き戸・折れ戸）
  * 3. 何も無い → 開口なしの欠き。壁は分けたまま残す
+ * 隙間が `minWidth` 未満なら記号があっても開口にせず、壁をつないで埋める（現実の戸は 600 mm 以上）。
+ *
+ * `symbols` は隙間を埋める記号の帯。中央線付きの帯と、壁レイヤー以外の帯（建具レイヤーの引き戸など）を渡す。
  *
  * 開口を挟む 2 本の壁は 1 本につなぎ、`offset` はつないだ壁の始点（`a`）からの距離で表す。
  * `walls` は入力の壁から開口で置き換わった分だけ本数が減る。`exterior` はどちらかが外壁なら外壁
@@ -108,7 +111,9 @@ export function detectOpenings(
       };
 
       let opening: Omit<Opening, 'wallId'> | null = null;
-      if (gap > CFG.wallMergeGap && gap <= OC.maxGap) {
+      // 開口の下限未満の隙間（壁の T 字交差に残る 100 mm など）は、記号があっても壁をつないで埋める
+      const narrow = gap <= CFG.wallMergeGap || gap < OC.minWidth;
+      if (!narrow && gap <= OC.maxGap) {
         const exterior = cur.wall.exterior || next.wall.exterior;
         const across = thickness / 2 + OC.arcCenterAcross;
         // 開き戸: 吊元（弧の中心）と閉じた戸の先端（弧の一端）がどちらも隙間の中にあり、
@@ -154,8 +159,8 @@ export function detectOpenings(
         }
       }
 
-      if (opening) {
-        pending.push(opening);
+      if (opening || narrow) {
+        if (opening) pending.push(opening);
         // 隙間をまたいで 1 本の壁にする。厚さは太い方、外壁はどちらかが外壁なら外壁
         cur = {
           ...cur,

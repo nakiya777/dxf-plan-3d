@@ -22,12 +22,16 @@ export function recognizePlan(plan: Plan2D): PlanModel {
 
   // `usedLineIds` の id は `toSegments` に渡した配列の添字なので、`plan.entities[i]` と対応する
   const nonWallSegs = segs.filter((s) => !bands.usedLineIds.has(s.id));
-  const { walls, openings } = detectOpenings(exteriorWalls, plan.entities, bands.symbols, wallLayers, nonWallSegs);
+  // 隙間を埋める記号: 中央線付きの帯と、壁レイヤー以外の帯（建具レイヤーの引き戸など。§7.2 手順 4）
+  const fillers = [...bands.symbols, ...bands.wallBands.filter((b) => !wallLayers.has(b.layer))];
+  const { walls, openings } = detectOpenings(exteriorWalls, plan.entities, fillers, wallLayers, nonWallSegs);
   const texts = plan.entities.filter((e): e is Extract<PlanEntity, { kind: 'text' }> => e.kind === 'text');
   const stairs = detectStairs(nonWallSegs, texts);
   const axes = detectAxes(plan.entities);
-  // 文字は 3D に描かない（§7.2 手順 8）。壁に使った線を除き、弧・円は全部残す（ドアの弧も床面に描く）
-  const decorLines = plan.entities.filter((e, i) => e.kind !== 'text' && !(e.kind === 'line' && bands.usedLineIds.has(i)));
+  // 文字は 3D に描かない（§7.2 手順 8）。壁レイヤーの帯に使った線だけを除き、
+  // 設備・家具の帯の線・窓記号の線・弧・円は全部残す（§7.2 手順 9。動画では床面の青線に全部出ている）
+  const wallLineIds = new Set(bands.wallBands.filter((b) => wallLayers.has(b.layer)).flatMap((b) => b.lineIds));
+  const decorLines = plan.entities.filter((e, i) => e.kind !== 'text' && !(e.kind === 'line' && wallLineIds.has(i)));
   const warnings = walls.length === 0 ? ['壁を認識できませんでした。レイヤー名を確認してください'] : [];
   return { walls, openings, stairs, axes, outline, decorLines, warnings };
 }

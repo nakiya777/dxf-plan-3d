@@ -35,9 +35,6 @@ interface Run {
   s1: number;
 }
 
-/** 外周の頂点を落とす外積の閾値（mm²）。1e-9 のずれで生まれる頂点は落とし、1 mm × 1 mm の角は残す */
-const COLLINEAR_EPS = 0.5;
-
 const rhoCenter = (r: Run) => (r.rhoLo + r.rhoHi) / 2;
 
 /**
@@ -190,7 +187,7 @@ function dropCollinear(poly: Polygon): Polygon {
     const p = poly[i];
     const next = poly[(i + 1) % n];
     const cross = (p.x - prev.x) * (next.y - p.y) - (p.y - prev.y) * (next.x - p.x);
-    if (Math.abs(cross) > COLLINEAR_EPS) out.push(p);
+    if (Math.abs(cross) > CFG.numeric.collinearCross) out.push(p);
   }
   return out;
 }

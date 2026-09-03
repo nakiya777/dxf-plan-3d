@@ -1,5 +1,6 @@
 {
   "name": "dxf-plan-3d",
+  "description": "DXF の平面図から壁・開口・階段を立ち上げ、屋根を載せて簡易 3D 建物モデルを作るブラウザアプリ",
   "private": true,
   "version": "0.1.0",
   "type": "module",

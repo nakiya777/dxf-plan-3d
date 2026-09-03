@@ -42,7 +42,24 @@ describe('loadDxf', () => {
   it('forest-s: 弧の角度は度で、玄関ドアの弧が 270→0 になっている', () => {
     const plan = load(FOREST_S);
     const arc = plan.entities.find((e) => e.kind === 'arc' && Math.abs(e.center.x - 9792) < 2);
-    expect(arc && arc.kind === 'arc' && arc.startDeg).toBeCloseTo(270, 0);
+    if (arc?.kind !== 'arc') throw new Error('玄関ドアの弧が見つからない');
+    expect(arc.startDeg).toBeCloseTo(270, 0);
+    expect(arc.endDeg).toBeCloseTo(0, 0);
+    expect(arc.radius).toBeCloseTo(694, 0);
+  });
+  it('自作 3 変種: UTF-8 版と Shift_JIS 版は同じ Plan2D になる（設計書 §11.2）', () => {
+    const utf8 = load('fixtures/sample-house.dxf');
+    const sjis = load('fixtures/sample-house-sjis.dxf');
+    expect(utf8.entities).toHaveLength(223);
+    expect(sjis.entities).toEqual(utf8.entities);
+    expect(sjis.bbox).toEqual(utf8.bbox);
+  });
+  it('自作 3 変種: 壁芯付き版は 壁芯 レイヤーの 13 本だけ増える', () => {
+    const base = load('fixtures/sample-house.dxf');
+    const withAxis = load('fixtures/sample-house-with-centerline.dxf');
+    expect(withAxis.entities).toHaveLength(236);
+    expect(withAxis.entities.filter((e) => e.layer === '壁芯')).toHaveLength(13);
+    expect(withAxis.entities.filter((e) => e.layer !== '壁芯')).toEqual(base.entities);
   });
   it('自作版: レイヤー名が保たれ、通り芯の円が 12 個ある', () => {
     const plan = load('fixtures/sample-house.dxf');
@@ -71,6 +88,7 @@ const SYNTHETIC = dxfText(
   0, 'LAYER', 2, 'ブロック', 70, 0, 62, 7,
   0, 'LAYER', 2, 'ポリ', 70, 0, 62, 7,
   0, 'LAYER', 2, '文字', 70, 0, 62, 7,
+  0, 'LAYER', 2, '文字2', 70, 0, 62, 7,
   0, 'LAYER', 2, 'スプライン', 70, 0, 62, 7,
   0, 'LAYER', 2, '非表示', 70, 0, 62, -7,
   0, 'LAYER', 2, '凍結', 70, 1, 62, 7,
@@ -95,6 +113,9 @@ const SYNTHETIC = dxfText(
   // (0,0) から (1000,0) へ、反時計回りに 90 度膨らむ弧
   0, 'LWPOLYLINE', 8, 'ポリ', 90, 2, 70, 0, 10, 0, 20, 0, 42, BULGE_90, 10, 1000, 20, 0,
   0, 'MTEXT', 8, '文字', 10, 200, 20, 300, 40, 250, 1, '{\\fMS Gothic|b0|i0|c128|p49;和室}\\P8畳',
+  // 終端 `;` を持たない書式コードの後ろに本文があり、さらに後方に `;` がある。
+  // 書式コードだけを落として、本文を食い潰さないことを見る
+  0, 'MTEXT', 8, '文字2', 10, 400, 20, 500, 40, 250, 1, '\\L洋室\\l 6帖;南向き',
   0, 'SPLINE', 8, 'スプライン', 10, 0, 20, 0, 10, 100, 20, 200, 10, 300, 20, 200, 10, 400, 20, 0,
   0, 'ENDSEC',
   0, 'EOF',
@@ -185,6 +206,13 @@ describe('parseDxfText: MTEXT とスプライン', () => {
     expect(text.height).toBe(250);
   });
 
+  it('終端 ; を持たない書式コードが後続の本文を食い潰さない', () => {
+    const [text] = onLayer(plan.entities, '文字2');
+    if (text?.kind !== 'text') throw new Error('文字ではない');
+    // 引数を取らない下線コードだけを落とし、本文と本文中の ; はそのまま残す
+    expect(text.text).toBe('洋室 6帖;南向き');
+  });
+
   it('SPLINE は制御点を結ぶ折れ線にする', () => {
     expect(onLayer(plan.entities, 'スプライン')).toHaveLength(3);
   });
@@ -201,5 +229,101 @@ describe('parseDxfText: 単位の正規化', () => {
     expect(circle?.kind === 'circle' && circle.radius).toBeCloseTo(1000, 6);
     expect(text?.kind === 'text' && text.height).toBeCloseTo(300, 6);
     expect(plan.bbox).toEqual({ minX: 0, minY: 0, maxX: 10000, maxY: 5000 });
+  });
+});
+
+/** 回転した INSERT の中の弧と、負のスケール（ミラー）で挿入したブロック */
+const TRANSFORMED = dxfText(
+  0, 'SECTION', 2, 'HEADER',
+  9, '$INSUNITS', 70, 4,
+  0, 'ENDSEC',
+  0, 'SECTION', 2, 'BLOCKS',
+  0, 'BLOCK', 2, 'ARCBLK', 10, 0, 20, 0,
+  0, 'ARC', 8, '回転', 10, 100, 20, 0, 40, 50, 50, 270, 51, 200,
+  0, 'ENDBLK',
+  0, 'BLOCK', 2, 'MIRBLK', 10, 0, 20, 0,
+  0, 'CIRCLE', 8, '鏡像', 10, 10, 20, 0, 40, 50,
+  0, 'ARC', 8, '鏡像', 10, 10, 20, 0, 40, 30, 50, 0, 51, 90,
+  0, 'TEXT', 8, '鏡像', 10, 10, 20, 0, 40, 100, 1, 'M',
+  0, 'ENDBLK',
+  0, 'ENDSEC',
+  0, 'SECTION', 2, 'ENTITIES',
+  0, 'INSERT', 8, '回転', 2, 'ARCBLK', 10, 1000, 20, 0, 50, 180,
+  0, 'INSERT', 8, '鏡像', 2, 'MIRBLK', 10, 0, 20, 0, 41, -1, 42, -1,
+  0, 'ENDSEC',
+  0, 'EOF',
+);
+
+/** ペーパー空間のエンティティと、4 段に入れ子にしたブロック */
+const NESTING = dxfText(
+  0, 'SECTION', 2, 'HEADER',
+  9, '$INSUNITS', 70, 4,
+  0, 'ENDSEC',
+  0, 'SECTION', 2, 'BLOCKS',
+  0, 'BLOCK', 2, 'L4', 10, 0, 20, 0,
+  0, 'LINE', 8, '段4', 10, 0, 20, 0, 11, 100, 21, 0,
+  0, 'ENDBLK',
+  0, 'BLOCK', 2, 'L3', 10, 0, 20, 0,
+  0, 'LINE', 8, '段3', 10, 0, 20, 0, 11, 100, 21, 0,
+  0, 'INSERT', 8, '段3', 2, 'L4', 10, 0, 20, 0,
+  0, 'ENDBLK',
+  0, 'BLOCK', 2, 'L2', 10, 0, 20, 0,
+  0, 'LINE', 8, '段2', 10, 0, 20, 0, 11, 100, 21, 0,
+  0, 'INSERT', 8, '段2', 2, 'L3', 10, 0, 20, 0,
+  0, 'ENDBLK',
+  0, 'BLOCK', 2, 'L1', 10, 0, 20, 0,
+  0, 'LINE', 8, '段1', 10, 0, 20, 0, 11, 100, 21, 0,
+  0, 'INSERT', 8, '段1', 2, 'L2', 10, 0, 20, 0,
+  0, 'ENDBLK',
+  0, 'ENDSEC',
+  0, 'SECTION', 2, 'ENTITIES',
+  0, 'INSERT', 8, '段1', 2, 'L1', 10, 0, 20, 0,
+  0, 'LINE', 8, 'モデル空間', 10, 0, 20, 0, 11, 1000, 21, 0,
+  0, 'LINE', 8, 'ペーパー空間', 67, 1, 10, 0, 20, 0, 11, 1000, 21, 0,
+  0, 'ENDSEC',
+  0, 'EOF',
+);
+
+describe('parseDxfText: INSERT の回転とミラー', () => {
+  const plan = parseDxfText(TRANSFORMED, 'transformed');
+
+  it('回転を足した弧の角度は [0, 360) に畳まれる', () => {
+    const [arc] = onLayer(plan.entities, '回転');
+    if (arc?.kind !== 'arc') throw new Error('弧ではない');
+    // 元は 270→200。180 度回すと 450→380 になるので、90→20 に丸まる
+    expect(arc.startDeg).toBeCloseTo(90, 6);
+    expect(arc.endDeg).toBeCloseTo(20, 6);
+    expect(arc.center.x).toBeCloseTo(900, 6);
+    expect(arc.radius).toBeCloseTo(50, 6);
+  });
+
+  it('負のスケールで挿入しても半径と字高が負にならない', () => {
+    const mirrored = onLayer(plan.entities, '鏡像');
+    const circle = mirrored.find((e) => e.kind === 'circle');
+    const arc = mirrored.find((e) => e.kind === 'arc');
+    const text = mirrored.find((e) => e.kind === 'text');
+    if (circle?.kind !== 'circle' || arc?.kind !== 'arc' || text?.kind !== 'text') {
+      throw new Error('円・弧・文字が揃っていない');
+    }
+    expect(circle.radius).toBe(50);
+    expect(arc.radius).toBe(30);
+    expect(text.height).toBe(100);
+    expect(circle.center.x).toBeCloseTo(-10, 6); // 位置は原点対称に移る
+  });
+});
+
+describe('parseDxfText: ペーパー空間と入れ子の深さ', () => {
+  const plan = parseDxfText(NESTING, 'nesting');
+
+  it('ペーパー空間（群コード 67）のエンティティは取り込まない', () => {
+    expect(onLayer(plan.entities, 'ペーパー空間')).toHaveLength(0);
+    expect(onLayer(plan.entities, 'モデル空間')).toHaveLength(1); // 同じ座標のモデル空間側は残る
+  });
+
+  it('INSERT の入れ子は 3 段まで展開し、4 段目は展開しない', () => {
+    expect(onLayer(plan.entities, '段1')).toHaveLength(1);
+    expect(onLayer(plan.entities, '段2')).toHaveLength(1);
+    expect(onLayer(plan.entities, '段3')).toHaveLength(1);
+    expect(onLayer(plan.entities, '段4')).toHaveLength(0);
   });
 });

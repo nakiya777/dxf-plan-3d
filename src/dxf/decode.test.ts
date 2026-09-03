@@ -19,10 +19,12 @@ describe('decodeDxfBytes', () => {
 });
 
 describe('unitScaleFromHeader', () => {
-  it('$INSUNITS 4 は 1、6 は 1000、1 は 25.4', () => {
+  it('$INSUNITS 4 は 1、6 は 1000、1 は 25.4、5 は 10', () => {
     expect(unitScaleFromHeader({ $INSUNITS: 4 }, 50000)).toBe(1);
     expect(unitScaleFromHeader({ $INSUNITS: 6 }, 50)).toBe(1000);
     expect(unitScaleFromHeader({ $INSUNITS: 1 }, 2000)).toBeCloseTo(25.4);
+    // cm の図面は実在する。この分岐が無いと図面範囲からの推定に落ち、建物が 100 倍小さくなる
+    expect(unitScaleFromHeader({ $INSUNITS: 5 }, 500)).toBe(10);
   });
   it('無指定は範囲の長辺で推定する', () => {
     expect(unitScaleFromHeader({}, 58870)).toBe(1); // forest-s は mm

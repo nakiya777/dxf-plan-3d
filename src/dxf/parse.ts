@@ -85,7 +85,10 @@ function stripMtextFormat(raw: string): string {
   return raw
     .replace(/\\P/g, ' ') // 段落区切りは空白にする
     .replace(/\\[LlOoKk]/g, '') // 下線・上線・取り消し線の切り替え（引数なし）
-    .replace(/\\[A-Za-z][^;\\]*;/g, '') // 引数付きの書式コード。`;` も `\` も跨がせない
+    // 引数付きの書式コード（`\fMS Gothic|b0;` など）。`\` を跨がせないのは、
+    // 想定外の未終端コードが来たときに巻き込む範囲を狭めるため。ただし有効な MTEXT では
+    // 上の 2 つの規則が未終端コードを先に落とすので、`[^;]*` との差は出ない
+    .replace(/\\[A-Za-z][^;\\]*;/g, '')
     .replace(/[{}]/g, ''); // 書式をまとめる括弧
 }
 
@@ -144,6 +147,9 @@ export function parseDxfText(text: string, sourceName: string): Plan2D {
           const arc = e as IArcEntity;
           // dxf-parser は弧の角度をラジアンで返すので度に直す（先行検証で実測済み）
           const toDeg = (rad: number) => normalizeDeg((rad * 180) / Math.PI + xf.rotDeg);
+          // 半径の絶対値は「負の半径」という無効な値を防ぐための最低限の処置。
+          // ミラー配置（負のスケール）では弧の向きが反転して始端と終端が入れ替わるが、
+          // フィクスチャに 1 件も無く検証できないため MVP では未対応（弧だけ 180 度ずれる）
           raw.push({
             kind: 'arc',
             layer,
@@ -232,7 +238,10 @@ function scaleEntity(e: PlanEntity, s: number): PlanEntity {
   }
 }
 
-/** エンティティ列の外接矩形。空なら原点だけの矩形を返す */
+/**
+ * エンティティ列の外接矩形。空なら原点だけの矩形を返す。
+ * Task 9 の範囲選択（`recognize/region.ts`）が使う予定なので export のまま残す。
+ */
 export function bboxOf(entities: PlanEntity[]): Box2 {
   const box: Box2 = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   const add = (p: Vec2, r = 0): void => {

@@ -184,6 +184,31 @@ test('緑の菱形をクリックすると寄棟（面 4）⇔ 切妻（面 2、
   expect(await page.evaluate(() => window.__app.roofGeom()!.planes.length)).toBe(4);
 });
 
+test('正方形の平面で棟が点に潰れても、緑の菱形をクリックして切妻にできる（サンプル平面図）', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'サンプル平面図を読み込む' }).click();
+  await expect(page.getByText('平面図を囲んでください')).toBeVisible();
+  await page.evaluate((r) => window.__app.selectRegion(r), F1);
+  await expect.poll(() => page.evaluate(() => window.__app.getModel().floors.length)).toBe(1);
+  await page.evaluate((id) => window.__app.setTopZ(id, 3650), (await page.evaluate(() => window.__app.getModel().floors[0])).id);
+  await page.evaluate(() => window.__app.addRoof());
+  await waitFrames(page);
+  // 7,280 角なので既定の寄棟は棟の長さ 0（方形）。橙球 2 個と緑菱形が同じ画面位置に重なる
+  const ridge = await page.evaluate(() => window.__app.roofGeom()!.ridge);
+  expect(ridge[0]).toEqual(ridge[1]);
+  expect(await page.evaluate(() => window.__app.roofGeom()!.planes.length)).toBe(4);
+
+  const box = (await page.locator('canvas').boundingBox())!;
+  const h = (await page.evaluate(() => window.__app.roofHandleScreen('ridgeMid')))!;
+  await page.mouse.move(box.x + h.x, box.y + h.y);
+  await expect(page.locator('.label')).toContainText('寄棟 / 切妻を切り替える');
+  await page.mouse.down();
+  await page.mouse.up();
+  await waitFrames(page);
+  expect(await page.evaluate(() => window.__app.getModel().roof!.inset)).toEqual([0, 0]);
+  expect(await page.evaluate(() => window.__app.roofGeom()!.planes.length)).toBe(2);
+});
+
 test('青ハンドルの上ドラッグでラベルが「壁の高さ x.xx m」になり、モデルの topZ と一致する（A3）', async ({ page }) => {
   await page.goto('/');
   await loadAndSelect(page, FIXTURE, F1);

@@ -133,7 +133,9 @@ export class HandleController {
   /** カーソル位置にレイを張り、当たったハンドル（グループならその親）を返す */
   private pick(e: PointerEvent): Object3D | undefined {
     this.setRay(e);
-    const hit = this.ray.intersectObjects(this.viewer.handles.children, true)[0]?.object;
+    const hits = this.ray.intersectObjects(this.viewer.handles.children, true).map((h) => h.object);
+    // 正方形の平面では棟が点に潰れて橙球 2 個と緑菱形が同じ位置に重なるので、緑が当たっていれば手前の橙より優先する
+    const hit = hits.find((h) => (h.userData as HandleData).kind === 'ridgeMid') ?? hits[0];
     if (!hit) return undefined;
     return hit.parent === this.viewer.handles ? hit : hit.parent!;
   }

@@ -75,7 +75,12 @@ export function toSegments(entities: PlanEntity[]): Seg[] {
   return out;
 }
 
-/** 同じ θ の要素を ρ の昇順に並べ、各グループ先頭との差が許容内の列に分ける */
+/**
+ * ρ の昇順に並べ、各グループ先頭との差が許容内の列に分ける。
+ * 丸めた値をキーにすると境界でグループが割れるのでこの形にしている。
+ * 比較相手を「直前の要素」ではなく「グループ先頭」にするのが要点。直前にすると数珠つなぎで
+ * 幅に上限が無くなり、15 mm ずつ 4 段ずれた区間で壁厚が 150 → 195 mm に太る（`walls.ts` の `joinCollinear`）
+ */
 export function groupByRho<T>(items: T[], rhoOf: (item: T) => number, tolerance: number): T[][] {
   const sorted = [...items].sort((p, q) => rhoOf(p) - rhoOf(q));
   const groups: T[][] = [];

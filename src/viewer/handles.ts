@@ -43,7 +43,8 @@ interface HandleSpec {
   hoverText: string;
   geometry: BufferGeometry[];
   placements: (model: BuildingModel, roofGeom?: RoofGeom) => HandlePlacement[];
-  create?: (controller: HandleController, position: Vector3, data: HandleData) => Object3D;
+  /** 複数パーツのハンドルを自前で組む。`handles` へ足すのは呼び出し側（`rebuild`）の役目 */
+  create?: (position: Vector3, data: HandleData, geometry: BufferGeometry[], material: MeshBasicMaterial) => Object3D;
   onDrag?: (controller: HandleController, e: PointerEvent, drag: Drag, delta: Vector2) => void;
   onClick?: () => void;
 }
@@ -54,7 +55,11 @@ interface HandleSpec {
  * Phase 2 で viewer を再利用するなら、`HandleController` にストア更新のコールバックを注入する形に変える（今は `store` を直接掴んでいる）
  */
 export class HandleController {
-  /** ハンドル種別ごとの見た目・配置・操作。追加時はこの定義にだけ種別固有の処理を足す */
+  /**
+   * ハンドル種別ごとの色・ホバー文言・ジオメトリ・配置・操作。
+   * 種別を足すときは `Kind` にリテラルを 1 つ加えて、この表に 1 項目足す
+   * （ドラッグが要るなら `onDrag` から呼ぶメソッドも 1 つ）
+   */
   private static readonly HANDLE_SPEC: Record<Kind, HandleSpec> = {
     floor: {
       color: 0x1e88e5,
@@ -74,11 +79,11 @@ export class HandleController {
       hoverText: '',
       geometry: [new SphereGeometry(0.5, 16, 12)],
       placements: (model, roofGeom) => {
-        if (!model.roof || !roofGeom) return [];
-        const [a, b] = roofGeom.ridge;
+        const ridge = ridgeOf(model, roofGeom);
+        if (!ridge) return [];
         return [
-          { position: toScene(a.x, a.y, a.z), data: { kind: 'ridgeEnd', end: 0 } },
-          { position: toScene(b.x, b.y, b.z), data: { kind: 'ridgeEnd', end: 1 } },
+          { position: ridge.ends[0], data: { kind: 'ridgeEnd', end: 0 } },
+          { position: ridge.ends[1], data: { kind: 'ridgeEnd', end: 1 } },
         ];
       },
       onDrag: (controller, e, drag) => controller.dragRidgeEnd(e, drag),
@@ -88,12 +93,8 @@ export class HandleController {
       hoverText: '寄棟 / 切妻を切り替える',
       geometry: [new OctahedronGeometry(0.6)],
       placements: (model, roofGeom) => {
-        if (!model.roof || !roofGeom) return [];
-        const [a, b] = roofGeom.ridge;
-        return [{
-          position: toScene((a.x + b.x) / 2, (a.y + b.y) / 2, a.z),
-          data: { kind: 'ridgeMid' },
-        }];
+        const ridge = ridgeOf(model, roofGeom);
+        return ridge ? [{ position: ridge.mid, data: { kind: 'ridgeMid' } }] : [];
       },
       onClick: () => store.updateModel(toggleRoofShape),
     },
@@ -105,18 +106,15 @@ export class HandleController {
         new ConeGeometry(0.22, 0.5, 12),
       ],
       placements: (model, roofGeom) => {
-        if (!model.roof || !roofGeom) return [];
-        const [a, b] = roofGeom.ridge;
-        return [{
-          position: toScene((a.x + b.x) / 2, (a.y + b.y) / 2, a.z),
-          data: { kind: 'rotate' },
-        }];
+        const ridge = ridgeOf(model, roofGeom);
+        return ridge ? [{ position: ridge.mid, data: { kind: 'rotate' } }] : [];
       },
-      create: (_, position, data) => rotateArrow(position, data, HandleController.HANDLE_SPEC.rotate.geometry, HandleController.MATERIAL.rotate),
+      create: (position, data, geometry, material) => rotateArrow(position, data, geometry[0], geometry[1], material),
       onClick: () => store.updateModel(rotateRidge),
     },
   };
 
+  /** 種別ごとの材質。static フィールドは宣言順に初期化されるので `HANDLE_SPEC` より後ろに置く */
   private static readonly MATERIAL: Record<Kind, MeshBasicMaterial> = Object.fromEntries(
     (Object.keys(HandleController.HANDLE_SPEC) as Kind[]).map((kind) => [
       kind,
@@ -176,18 +174,13 @@ export class HandleController {
     }
   }
 
+  /** ハンドル 1 個を組み立てて返すだけのファクトリ。`viewer.handles` へ足すのは `rebuild` の役目 */
   private create(kind: Kind, position: Vector3, data: HandleData): Object3D {
     const spec = HandleController.HANDLE_SPEC[kind];
-    return spec.create ? spec.create(this, position, data) : this.add(spec.geometry[0], kind, position, data);
-  }
-
-  private add(geometry: BufferGeometry, kind: Kind, pos: Vector3, data: HandleData): Mesh {
-    const mesh = new Mesh(geometry, HandleController.MATERIAL[kind]);
-    mesh.position.copy(pos);
-    mesh.userData = data;
-    mesh.renderOrder = 10;
-    this.viewer.handles.add(mesh);
-    return mesh;
+    const material = HandleController.MATERIAL[kind];
+    return spec.create
+      ? spec.create(position, data, spec.geometry, material)
+      : simpleHandle(spec.geometry[0], material, position, data);
   }
 
   /** 画面上の大きさを一定にする（カメラ距離に比例して拡大） */
@@ -335,14 +328,39 @@ function southWestCorner(floor: FloorBlock): { x: number; y: number } | undefine
   return { x: rect.minX + floor.offset.x, y: rect.minY + floor.offset.y };
 }
 
+/**
+ * 棟の両端と中点をシーン座標で返す。屋根が無ければ undefined。
+ * 橙・緑・紫の 3 種が同じガード（`model.roof` とビルド済みの `roofGeom` が揃っているか）と
+ * 同じ中点の計算が要るので、1 か所にまとめる
+ */
+function ridgeOf(model: BuildingModel, roofGeom?: RoofGeom): { ends: [Vector3, Vector3]; mid: Vector3 } | undefined {
+  if (!model.roof || !roofGeom) return undefined;
+  const [a, b] = roofGeom.ridge;
+  return {
+    ends: [toScene(a.x, a.y, a.z), toScene(b.x, b.y, b.z)],
+    mid: toScene((a.x + b.x) / 2, (a.y + b.y) / 2, a.z),
+  };
+}
+
+/** 単体メッシュのハンドル。`handles` へ足すのは呼び出し側 */
+function simpleHandle(geometry: BufferGeometry, material: MeshBasicMaterial, pos: Vector3, data: HandleData): Mesh {
+  const mesh = new Mesh(geometry, material);
+  mesh.position.copy(pos);
+  mesh.userData = data;
+  mesh.renderOrder = 10;
+  return mesh;
+}
+
 /** 紫回転矢印: 3/4 周の弧 + 先端の円錐。水平に寝かせて棟中点の上空に置く */
-function rotateArrow(mid: Vector3, data: HandleData, geometry: BufferGeometry[], material: MeshBasicMaterial): Group {
+function rotateArrow(
+  mid: Vector3, data: HandleData, arcGeometry: BufferGeometry, tipGeometry: BufferGeometry, material: MeshBasicMaterial,
+): Group {
   const group = new Group();
   group.position.copy(mid).add(new Vector3(0, ROTATE_LIFT, 0));
   group.userData = data;
-  const arc = new Mesh(geometry[0], material);
+  const arc = new Mesh(arcGeometry, material);
   arc.rotation.x = -Math.PI / 2;
-  const tip = new Mesh(geometry[1], material);
+  const tip = new Mesh(tipGeometry, material);
   // 弧の終点（角度 1.5π）に接線方向を向けて置く
   tip.position.set(0, 0, 0.6);
   tip.rotation.z = -Math.PI / 2;

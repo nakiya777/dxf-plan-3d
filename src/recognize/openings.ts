@@ -1,7 +1,7 @@
 import type { Opening, PlanEntity, Vec2, Wall } from '../model/types';
 import type { Band } from './bands';
 import { CFG } from './config';
-import { dirOf, dot, normalOf, toSeg, type Seg } from './geom';
+import { dirOf, dot, groupByRho, normalOf, toSeg, type Seg } from './geom';
 
 type Arc = Extract<PlanEntity, { kind: 'arc' }>;
 
@@ -22,8 +22,8 @@ interface Chain {
 }
 
 /**
- * 共線の壁を鎖にまとめる。壁芯のまとめ方は `walls.ts` の `joinCollinear` と同じで、
- * ρ 昇順に並べて「グループ先頭との差が許容内なら同じ壁芯」とする（丸めたキーだと境界で割れる）
+ * 共線の壁を鎖にまとめる。壁芯のまとめ方は `geom.ts` の `groupByRho` で行い、
+ * その後に各鎖の壁を s 昇順に並べる（丸めたキーだと境界で割れる）
  */
 function chainsOf(walls: Wall[]): Chain[] {
   const byTheta = new Map<number, WallRun[]>();
@@ -36,11 +36,8 @@ function chainsOf(walls: Wall[]): Chain[] {
   }
   const chains: Chain[] = [];
   for (const [theta, runs] of byTheta) {
-    const sorted = [...runs].sort((p, q) => p.rho - q.rho);
-    let current: Chain | null = null;
-    for (const r of sorted) {
-      if (current && r.rho - current.rho <= CFG.collinearRhoTol) current.runs.push(r);
-      else chains.push((current = { theta, rho: r.rho, runs: [r] }));
+    for (const grouped of groupByRho(runs, (r) => r.rho, CFG.collinearRhoTol)) {
+      chains.push({ theta, rho: grouped[0].rho, runs: grouped });
     }
   }
   for (const c of chains) c.runs.sort((p, q) => p.s0 - q.s0);

@@ -4,7 +4,7 @@ import { union, type MultiPolygon, type Ring } from 'polygon-clipping';
 import type { Box2, Polygon, Vec2, Wall } from '../model/types';
 import { totalLengthByLayer, type Band, type BandResult } from './bands';
 import { CFG } from './config';
-import { fromRhoS, toSeg } from './geom';
+import { fromRhoS, groupByRho, toSeg } from './geom';
 
 /**
  * 壁レイヤーを決める（設計書 §7.2 手順 2）。
@@ -54,15 +54,7 @@ function joinCollinear(runs: Run[], maxGap: number): Run[] {
 
   const joined: Run[] = [];
   for (const theta of [...byTheta.keys()].sort((p, q) => p - q)) {
-    const sorted = [...byTheta.get(theta)!].sort((p, q) => rhoCenter(p) - rhoCenter(q));
-    const lines: Run[][] = [];
-    for (const r of sorted) {
-      const last = lines[lines.length - 1];
-      if (last && rhoCenter(r) - rhoCenter(last[0]) <= CFG.collinearRhoTol) last.push(r);
-      else lines.push([r]);
-    }
-
-    for (const line of lines) {
+    for (const line of groupByRho(byTheta.get(theta)!, rhoCenter, CFG.collinearRhoTol)) {
       const bySpan = [...line].sort((p, q) => p.s0 - q.s0);
       let current = { ...bySpan[0] };
       for (const r of bySpan.slice(1)) {

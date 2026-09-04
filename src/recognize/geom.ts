@@ -75,6 +75,18 @@ export function toSegments(entities: PlanEntity[]): Seg[] {
   return out;
 }
 
+/** 同じ θ の要素を ρ の昇順に並べ、各グループ先頭との差が許容内の列に分ける */
+export function groupByRho<T>(items: T[], rhoOf: (item: T) => number, tolerance: number): T[][] {
+  const sorted = [...items].sort((p, q) => rhoOf(p) - rhoOf(q));
+  const groups: T[][] = [];
+  for (const item of sorted) {
+    const last = groups[groups.length - 1];
+    if (last && rhoOf(item) - rhoOf(last[0]) <= tolerance) last.push(item);
+    else groups.push([item]);
+  }
+  return groups;
+}
+
 /** (θ, ρ, s) → 平面座標 */
 export const fromRhoS = (theta: number, rho: number, s: number): Vec2 => {
   const u = dirOf(theta);
@@ -85,4 +97,3 @@ export const fromRhoS = (theta: number, rho: number, s: number): Vec2 => {
 /** 向き方向の重なり長。離れていれば負になる */
 export const overlapLen = (p: { s0: number; s1: number }, q: { s0: number; s1: number }) =>
   Math.min(p.s1, q.s1) - Math.max(p.s0, q.s0);
-

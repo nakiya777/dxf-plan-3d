@@ -1,5 +1,5 @@
-import { Vector3 } from 'three';
-import { addRoof, moveFloor, removeRoof, rotateRidge, setInset, setRoofParam, setTopZ } from '../model/building';
+import { Vector3, type Object3D } from 'three';
+import { addRoof, moveFloor, removeRoof, rotateRidge, setInset, setRoofParam, setTopZ, toggleRoofShape } from '../model/building';
 import type { RoofSliderParams } from '../model/building';
 import type { RoofGeom } from '../model/roof';
 import type { Box2, BuildingModel } from '../model/types';
@@ -19,11 +19,15 @@ export interface AppHooks {
   removeRoof: () => void;
   setInset: (end: 0 | 1, v: number) => void;
   rotateRidge: () => void;
+  /** 緑菱形のクリックと同じ: 寄棟 ⇔ 切妻 */
+  toggleRoofShape: () => void;
   setRoof: (p: RoofSliderParams) => void;
   /** 直前の描画で解いた屋根形状（`ridgeZ` `planes` `ridge` `edges`）。屋根が無ければ undefined */
   roofGeom: () => RoofGeom | undefined;
   /** 青ハンドルの画面位置（キャンバス左上からの px）。ドラッグの起点探しに使う。ハンドルは最上階にしか無いので、下の階は undefined */
   handleScreen: (floorId: string) => { x: number; y: number } | undefined;
+  /** 屋根ハンドルの画面位置（キャンバス左上からの px）。`ridgeMid` = 緑菱形、`rotate` = 紫。屋根が無ければ undefined */
+  roofHandleScreen: (kind: 'ridgeMid' | 'rotate') => { x: number; y: number } | undefined;
   /** 「壁を透かす」の切替（パネルのボタンと同じ） */
   setSeeThrough: (on: boolean) => void;
   /** 直前の描画で 0.15 の正面壁用材質になっている壁 id の一覧。切替やカメラ移動の後は 1 フレーム待ってから読む */
@@ -59,19 +63,24 @@ export function installTestHooks(viewer: Viewer): void {
     removeRoof: () => store.updateModel(removeRoof),
     setInset: (end, v) => store.updateModel((m) => setInset(m, end, v)),
     rotateRidge: () => store.updateModel(rotateRidge),
+    toggleRoofShape: () => store.updateModel(toggleRoofShape),
     setRoof: (p) => store.updateModel((m) => setRoofParam(m, p)),
     roofGeom: () => viewer.built?.roofGeom,
-    handleScreen: (floorId) => {
-      const handle = viewer.handles.children.find((h) => (h.userData as { floorId?: string }).floorId === floorId);
-      if (!handle) return undefined;
-      const p = handle.getWorldPosition(new Vector3()).project(viewer.camera);
-      const el = viewer.renderer.domElement;
-      const px = pxFromNdc(p, { width: el.clientWidth, height: el.clientHeight });
-      return { x: px.x, y: px.y };
-    },
+    handleScreen: (floorId) => screenOf(viewer, (h) => (h.userData as { floorId?: string }).floorId === floorId),
+    roofHandleScreen: (kind) => screenOf(viewer, (h) => (h.userData as { kind?: string }).kind === kind),
     setSeeThrough: (on) => store.set({ seeThrough: on }),
     seeThroughWalls: () => viewer.seeThroughWalls(),
     materialState: () => viewer.materialState(),
     setCameraAzimuth: (deg) => viewer.setCameraAzimuth(deg),
   };
+}
+
+/** 条件に合う最初のハンドルの画面位置（キャンバス左上からの px）。無ければ undefined */
+function screenOf(viewer: Viewer, match: (h: Object3D) => boolean): { x: number; y: number } | undefined {
+  const handle = viewer.handles.children.find(match);
+  if (!handle) return undefined;
+  const p = handle.getWorldPosition(new Vector3()).project(viewer.camera);
+  const el = viewer.renderer.domElement;
+  const px = pxFromNdc(p, { width: el.clientWidth, height: el.clientHeight });
+  return { x: px.x, y: px.y };
 }

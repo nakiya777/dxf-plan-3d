@@ -3,7 +3,7 @@ import {
   SphereGeometry, TorusGeometry, Vector2, Vector3,
 } from 'three';
 import { ndcFromPointer, pxFromNdc, toModel, toScene } from '../geometry/coords';
-import { centerlineRect, moveFloor, rotateRidge, setInset, setRidgeOffset, setTopZ, topFloorRect } from '../model/building';
+import { centerlineRect, moveFloor, rotateRidge, setInset, setTopZ, toggleRoofShape, topFloorRect } from '../model/building';
 import type { BuildingModel, FloorBlock } from '../model/types';
 import { store } from '../state/store';
 import { makeLabel } from './labels';
@@ -22,7 +22,7 @@ const SCREEN_SCALE = 0.018;
 const ROTATE_LIFT = 1.2;
 /** 鉛直 1 m を画面に投影した長さ（px）がこれ未満なら高さドラッグを無視する。天頂付近での発散を防ぐ */
 const MIN_VERTICAL_PX = 2;
-const HOVER_TEXT: Record<Kind, string> = { floor: '建物の高さ / 横へ移動', rotate: '棟の向きを変える', ridgeEnd: '', ridgeMid: '' };
+const HOVER_TEXT: Record<Kind, string> = { floor: '建物の高さ / 横へ移動', rotate: '棟の向きを変える', ridgeEnd: '', ridgeMid: '寄棟 / 切妻を切り替える' };
 
 /** ジオメトリと材質は共有し、再構築のたびに作らない */
 const GEOMETRY = {
@@ -183,7 +183,7 @@ export class HandleController {
     if (!d.moved && delta.length() < DRAG_THRESHOLD_PX) return;
     d.moved = true;
     if (d.data.kind === 'floor') this.dragFloor(e, d, delta);
-    else if (d.data.kind === 'ridgeEnd' || d.data.kind === 'ridgeMid') this.dragRidge(e, d);
+    else if (d.data.kind === 'ridgeEnd') this.dragRidgeEnd(e, d);
   }
 
   /** 青ハンドル: 高さモードは画面 Y を鉛直線に射影して setTopZ、横移動モードは水平面にレイキャストして moveFloor */
@@ -209,8 +209,8 @@ export class HandleController {
     }
   }
 
-  /** 橙球: 棟方向の位置から inset を出す。緑菱形: 棟に直交する方向の中心からの距離を ridgeOffset にする */
-  private dragRidge(e: PointerEvent, d: Drag): void {
+  /** 橙球: 棟方向の位置から inset を出す */
+  private dragRidgeEnd(e: PointerEvent, d: Drag): void {
     const model = store.get().model;
     const roof = model.roof;
     if (!roof) return;
@@ -218,14 +218,9 @@ export class HandleController {
     const p = this.hitGround(e, d.grabXY.y);
     if (!p) return;
     const mp = toModel(p);   // 建物座標 mm
-    if (d.data.kind === 'ridgeEnd') {
-      const along = roof.axis === 'x' ? mp.x : mp.y;
-      const [min, max] = roof.axis === 'x' ? [rect.minX, rect.maxX] : [rect.minY, rect.maxY];
-      store.set({ model: setInset(model, d.data.end!, d.data.end === 0 ? along - min : max - along) });
-    } else {
-      const across = roof.axis === 'x' ? mp.y - (rect.minY + rect.maxY) / 2 : mp.x - (rect.minX + rect.maxX) / 2;
-      store.set({ model: setRidgeOffset(model, across) });
-    }
+    const along = roof.axis === 'x' ? mp.x : mp.y;
+    const [min, max] = roof.axis === 'x' ? [rect.minX, rect.maxX] : [rect.minY, rect.maxY];
+    store.set({ model: setInset(model, d.data.end!, d.data.end === 0 ? along - min : max - along) });
   }
 
   private up(e: PointerEvent): void {
@@ -235,8 +230,10 @@ export class HandleController {
     if (this.el.hasPointerCapture(e.pointerId)) this.el.releasePointerCapture(e.pointerId);
     this.viewer.controls.enabled = true;
     this.setHoverText('');
-    // 紫はクリック（動かさずに離す）で棟の向きを切り替える
-    if (!d.moved && d.data.kind === 'rotate') store.updateModel(rotateRidge);
+    // 紫・緑はクリック（動かさずに離す）で切り替える。紫は棟の向き、緑は寄棟 ⇔ 切妻
+    if (d.moved) return;
+    if (d.data.kind === 'rotate') store.updateModel(rotateRidge);
+    else if (d.data.kind === 'ridgeMid') store.updateModel(toggleRoofShape);
   }
 
   private hover(e: PointerEvent): void {

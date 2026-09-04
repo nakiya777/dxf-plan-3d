@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addFloor, addRoof, alignToBelow, centerlineRect, createBuilding, moveFloor, removeRoof, rotateRidge,
-  setFloor1Level, setInset, setRidgeOffset, setRoofParam, setTopZ, topFloorRect,
+  setFloor1Level, setInset, setRidgeOffset, setRoofParam, setTopZ, toggleRoofShape, topFloorRect,
 } from './building';
 import type { PlanModel, Wall } from './types';
 
@@ -244,6 +244,21 @@ describe('屋根', () => {
     // 棟が Y 方向なら W = 9,100 → 4,550 だが、L/2 = 2,957.5 が上限
     expect(m.roof).toMatchObject({ axis: 'y', inset: [W / 2, W / 2], ridgeOffset: 0 });
     expect(rotateRidge(m).roof?.axis).toBe('x');
+  });
+  it('toggleRoofShape は寄棟（既定 inset）を切妻（inset [0,0]）にする。片端だけ寄棟でも切妻になる', () => {
+    const m = addRoof(addFloor(createBuilding(), plan()));
+    expect(toggleRoofShape(m).roof?.inset).toEqual([0, 0]);
+    expect(toggleRoofShape(setInset(m, 0, 0)).roof?.inset).toEqual([0, 0]);
+  });
+  it('toggleRoofShape は切妻を既定の寄棟位置に戻す。rotateRidge 後は新しい軸の既定に戻る', () => {
+    let m = addRoof(addFloor(createBuilding(), plan()));
+    m = toggleRoofShape(m);
+    expect(toggleRoofShape(m).roof?.inset).toEqual([W / 2, W / 2]);
+    // Y 方向の棟では幅 9,100・長さ 5,915 なので既定は min(4,550, 2,957.5) = W/2
+    m = toggleRoofShape(rotateRidge(m));
+    expect(m.roof?.inset).toEqual([0, 0]);
+    expect(toggleRoofShape(m).roof).toMatchObject({ axis: 'y', inset: [W / 2, W / 2] });
+    expect(toggleRoofShape(addFloor(createBuilding(), plan())).roof).toBeUndefined();
   });
   it('setRidgeOffset は 10 mm に丸め、±(W/2 − 300) で止まる', () => {
     const m = addRoof(addFloor(createBuilding(), plan()));

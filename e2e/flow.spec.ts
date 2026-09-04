@@ -142,6 +142,48 @@ test('「サンプル平面図を読み込む」でファイル選択なしに 1
   await expect(page.locator('.notice')).toHaveCount(0);
 });
 
+test('緑の菱形をクリックすると寄棟（面 4）⇔ 切妻（面 2、inset [0,0]）が切り替わり、もう一度で既定の寄棟に戻る', async ({ page }) => {
+  await page.goto('/');
+  // sample-house は 1 階も 2 階も 7,280 角の正方形で棟が点に潰れ、橙球 2 個と緑菱形が同じ位置に重なって緑を掴めない。
+  // 「長方形を描く」の画面水平ドラッグは約 4,840 × 4,140 mm の長方形になる（A9 の試験と同じ）ので、こちらで棟に長さを持たせる
+  await page.getByRole('button', { name: '長方形を描く' }).click();
+  const canvas = page.locator('canvas');
+  const box = (await canvas.boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx - 150, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 150, cy, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.__app.getModel().floors.length)).toBe(1);
+  await page.evaluate((id) => window.__app.setTopZ(id, 2000), (await page.evaluate(() => window.__app.getModel().floors[0])).id);
+  await page.evaluate(() => window.__app.addRoof());
+  await waitFrames(page);
+  expect(await page.evaluate(() => window.__app.roofGeom()!.planes.length)).toBe(4);
+  const initial = (await page.evaluate(() => window.__app.getModel().roof))!;
+  expect(initial.inset[0]).toBeGreaterThan(0);
+
+  const clickGreen = async () => {
+    const h = (await page.evaluate(() => window.__app.roofHandleScreen('ridgeMid')))!;
+    expect(h).toBeDefined();
+    await page.mouse.move(box.x + h.x, box.y + h.y);
+    await expect(page.locator('.label')).toContainText('寄棟 / 切妻を切り替える');
+    await page.mouse.down();
+    await page.mouse.up();
+    await waitFrames(page);
+  };
+
+  // 1 回目: 切妻
+  await clickGreen();
+  expect(await page.evaluate(() => window.__app.getModel().roof!.inset)).toEqual([0, 0]);
+  expect(await page.evaluate(() => window.__app.roofGeom()!.planes.length)).toBe(2);
+
+  // 2 回目: 既定の寄棟に戻る
+  await clickGreen();
+  expect(await page.evaluate(() => window.__app.getModel().roof!.inset)).toEqual(initial.inset);
+  expect(await page.evaluate(() => window.__app.roofGeom()!.planes.length)).toBe(4);
+});
+
 test('青ハンドルの上ドラッグでラベルが「壁の高さ x.xx m」になり、モデルの topZ と一致する（A3）', async ({ page }) => {
   await page.goto('/');
   await loadAndSelect(page, FIXTURE, F1);

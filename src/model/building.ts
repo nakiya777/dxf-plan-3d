@@ -8,7 +8,7 @@ export const SNAP_XY = 10;
 export const ROOF_DEFAULTS = { pitchSun: 4, eave: 600, verge: 600, thickness: 150 } as const;
 /** 橙球の 0（切妻）・既定の寄棟位置へのスナップ幅（§6.5） */
 const INSET_SNAP = 100;
-/** 緑菱形の可動範囲を W/2 から縮める余白（§6.5） */
+/** `setRidgeOffset`（UI 未使用）の可動範囲を W/2 から縮める余白（§6.5） */
 const RIDGE_OFFSET_MARGIN = 300;
 /** 通り芯ラベルが無いときの外壁重ね合わせで「同じ位置」とみなす許容差 */
 const OVERLAY_TOLERANCE = 20;
@@ -250,7 +250,21 @@ export function setInset(model: BuildingModel, end: 0 | 1, value: number): Build
   return { ...model, roof: { ...model.roof, inset } };
 }
 
-/** 緑菱形: 棟の平行移動 [暫定機能]。10 mm スナップ、±(W/2 − 300) で止める */
+/**
+ * 緑菱形: 寄棟 ⇔ 切妻の切替。どちらかの端の inset が 0 より大きければ両端を 0（切妻）に、
+ * 両端が 0 なら既定の寄棟位置（`defaultInset`）に戻す。`rotateRidge` の後でも現在の軸の既定で戻る
+ */
+export function toggleRoofShape(model: BuildingModel): BuildingModel {
+  if (!model.roof) return model;
+  const isHip = model.roof.inset[0] > 0 || model.roof.inset[1] > 0;
+  const inset = isHip ? 0 : defaultInset(topFloorRect(model), model.roof.axis);
+  return { ...model, roof: { ...model.roof, inset: [inset, inset] } };
+}
+
+/**
+ * 棟の平行移動 [UI 未使用]。10 mm スナップ、±(W/2 − 300) で止める。
+ * 緑菱形は寄棟 ⇔ 切妻の切替（`toggleRoofShape`）になったので、今はどのハンドルからも呼ばれない。Phase 2 で使う可能性があるため残す
+ */
 export function setRidgeOffset(model: BuildingModel, value: number): BuildingModel {
   if (!model.roof) return model;
   const { W } = roofSpan(topFloorRect(model), model.roof.axis);

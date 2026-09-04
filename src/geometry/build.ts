@@ -15,7 +15,9 @@ import { buildWallProfile } from './wallShape';
  */
 export const MATERIALS = {
   body: new MeshLambertMaterial({ color: 0xf4f4f4 }),
-  roof: new MeshLambertMaterial({ color: 0x3a3a3a }),
+  // 屋根を深度で 1 単位だけ手前に寄せる。壁の天端は屋根面ぴったりに切るので上面が同一平面になり、
+  // オフセットが無いと深度の丸めで壁が屋根越しにちらつく（軒側と妻壁の稜線に白い斑が出る）
+  roof: new MeshLambertMaterial({ color: 0x3a3a3a, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
   edge: new LineBasicMaterial({ color: 0x1a1a1a }),
   decor: new LineBasicMaterial({ color: 0x3b7dd8 }),
   roofEdge: new LineBasicMaterial({ color: 0xe53935 }),
@@ -83,7 +85,7 @@ function buildFloor(group: Group, model: BuildingModel, floor: FloorBlock, index
   }
   const H = floor.topZ - floor.baseZ;
   for (const w of floor.plan.walls) {
-    const useRoof = roofGeom !== undefined && floor === top && w.exterior;
+    const useRoof = roofGeom !== undefined && floor === top;
     const mesh = solidMesh(wallGeometry(w, floor.plan.walls, floor.plan.openings.filter((o) => o.wallId === w.id), H, floor, useRoof ? roofGeom : undefined));
     const wallData: WallUserData = { wallId: w.id, a: shiftPoint(w.a, floor.offset), b: shiftPoint(w.b, floor.offset), exterior: w.exterior };
     mesh.userData = wallData;
@@ -179,10 +181,11 @@ function segmentIntersectionParam(a: Vec2, b: Vec2, c: Vec2, d: Vec2): number | 
  *
  * `roofGeom` を渡すと天端を屋根面で切る（§8.6）。壁には厚みがあるので壁芯 1 点では足りず、
  * その s で壁が占める帯（壁芯 ±厚さ/2）にわたる屋根上面の最小値を天端にする。
- * 帯を 1 点で近似すると、軒側では壁の外面のほうが屋根が低いぶんだけ壁が屋根を突き抜ける
- * （勾配 4 寸・壁厚 150 で 30 mm）。妻壁が三角に伸びるのも同じ式（帯の最小値が H を超える）で出る。
+ * 外壁はその値をそのまま使い（妻壁は三角に伸びる）、内壁は `min(H, 帯の最小値)` で頭打ちにする
+ * （屋根裏へは伸ばさず、軒の近くで屋根が H より下がる所だけ切る）。
+ * 帯を 1 点で近似すると、軒側では壁の外面のほうが屋根が低いぶんだけ壁が屋根を突き抜ける（勾配 4 寸・壁厚 150 で 30 mm）。
  *
- * `heightAt` は屋根面の min なので (x, y) について凹関数。帯の最小値は端（外面・内面）で取り、
+ * `heightAt` は屋根面の min なので (x, y) について凹関数（`min(H, …)` を掛けても凹のまま）。帯の最小値は端（外面・内面）で取り、
  * サンプル間を直線で結んでも屋根を越えない。s 方向は 100 mm 刻みに加えて棟・隅棟の投影との交点を打つ。
  * 面が切り替わる s は帯の縁ごとに違うので、交点は帯の各縁で求める（打たないと勾配が変わる箇所で天端が直線で結ばれて食い込む）
  */
@@ -202,7 +205,8 @@ export function wallGeometry(w: Wall, walls: Wall[], openings: Opening[], H: num
       const cx = a.x + ux * (s - ext0), cy = a.y + uy * (s - ext0);
       let z = Infinity;
       for (const d of offsets) z = Math.min(z, roofGeom.heightAt(cx + nx * d, cy + ny * d));
-      return z - floor.baseZ;
+      // 外壁は屋根まで伸ばす（妻壁）。内壁は伸ばさず H で頭打ちにし、屋根が H より低い所だけ切る
+      return w.exterior ? z - floor.baseZ : Math.min(H, z - floor.baseZ);
     };
     // 交点は延長ぶんも含む壁の全長で取る（角では延長した側が屋根の低いほうに出るため）
     const total = L + ext0 + ext1;

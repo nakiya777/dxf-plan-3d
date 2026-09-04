@@ -208,6 +208,11 @@ describe('屋根と妻壁', () => {
     return m;
   };
   const ridgeZ = 3350 + 0.4 * (5915 / 2);
+  /** 内壁 2 本を足した平面。i は棟の真下（屋根は H より高い）、j は軒側の外壁 a に取り付く（端が屋根に切られる） */
+  const planWithInnerWalls: PlanModel = {
+    ...plan,
+    walls: [...plan.walls, wall('i', 0, 2957.5, 9100, 2957.5, false, 120), wall('j', 4550, 0, 4550, 2957.5, false, 120)],
+  };
   it('屋根をかけると最高点は棟高、切妻側の壁は棟高まで伸びる', () => {
     const g = buildBuilding(gabled());
     const roof = g.group.children.find((c) => c.name === 'roof') as Mesh;
@@ -246,7 +251,7 @@ describe('屋根と妻壁', () => {
     expect(box(g.group.children.find((c) => c.name === 'roof')!).max.y).toBeCloseTo(g.roofGeom!.ridgeZ / 1000, 6);
   });
   /**
-   * 外壁の「天端 − 屋根の上面」の最大値（mm）。0 以下なら屋根を突き抜けていない。
+   * 外壁・内壁を通した「天端 − 屋根の上面」の最大値（mm）。0 以下なら屋根を突き抜けていない。
    * 壁の天端ポリラインを s 方向に 20 点サンプルし、各点で壁芯・外面・内面の 3 位置を測る
    */
   function maxRoofProtrusion(m: BuildingModel): number {
@@ -256,7 +261,7 @@ describe('屋根と妻壁', () => {
     let worst = -Infinity;
     for (const child of built.group.children) {
       const ud = child.userData as WallUserData;
-      if (child.name !== 'wall' || !ud.exterior) continue;
+      if (child.name !== 'wall') continue;
       const half = walls.find((w) => w.id === ud.wallId)!.thickness / 2;
       const len = Math.hypot(ud.b.x - ud.a.x, ud.b.y - ud.a.y);
       const ux = (ud.b.x - ud.a.x) / len, uy = (ud.b.y - ud.a.y) / len;
@@ -287,16 +292,28 @@ describe('屋根と妻壁', () => {
     ['切妻', (m: BuildingModel) => toggleRoofShape(m)],
     ['急勾配 10 寸', (m: BuildingModel) => setRoofParam(m, { pitchSun: 10 })],
     ['軒の出 0（壁の帯が屋根の外形からはみ出す）', (m: BuildingModel) => setRoofParam(m, { eave: 0, verge: 0 })],
-  ])('外壁は屋根を突き抜けない: %s', (_name, tweak) => {
-    expect(maxRoofProtrusion(tweak(addRoof(oneFloor())))).toBeLessThan(FLOAT32_MM);
+  ])('外壁も内壁も屋根を突き抜けない: %s', (_name, tweak) => {
+    expect(maxRoofProtrusion(tweak(addRoof(oneFloor(planWithInnerWalls))))).toBeLessThan(FLOAT32_MM);
   });
 
-  it('内壁は屋根があっても H のまま', () => {
-    const p = { ...plan, walls: [...plan.walls, wall('i', 0, 2957.5, 9100, 2957.5, false, 120)] };
-    let m = addRoof(oneFloor(p));
+  it('内壁は屋根裏へ伸びず、屋根が H より下がる端だけ切られる（切妻）', () => {
+    let m = addRoof(oneFloor(planWithInnerWalls));
     m = { ...m, roof: { ...m.roof!, inset: [0, 0] } };
-    const inner = buildBuilding(m).group.children.find((c) => c.name === 'wall' && c.userData.wallId === 'i')!;
-    expect(box(inner).max.y).toBeCloseTo(3.35, 6);
+    const g = buildBuilding(m);
+    const zOf = (wallId: string) => {
+      const mesh = g.group.children.find((c) => c.name === 'wall' && c.userData.wallId === wallId) as Mesh;
+      const pos = mesh.geometry.getAttribute('position');
+      const out: number[] = [];
+      for (let i = 0; i < pos.count; i++) out.push(new Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(SCENE_TO_MODEL).z);
+      return out;
+    };
+    const tops = (wallId: string) => zOf(wallId).filter((z) => z > m.floors[0].baseZ + 1);   // 天端側の頂点だけ（床側は baseZ）
+    // 棟の真下の内壁 i: 屋根は全長で H より高いので、天端は全点 He のまま。切られも伸びもしない
+    expect(Math.max(...tops('i'))).toBeCloseTo(3350, 3);
+    expect(Math.min(...tops('i'))).toBeCloseTo(3350, 3);
+    // 軒側の外壁に取り付く内壁 j: 最高点は He のまま、外壁の外面まで延びた端だけ He − 0.4 × 75 に切られる
+    expect(Math.max(...tops('j'))).toBeCloseTo(3350, 3);
+    expect(Math.min(...tops('j'))).toBeCloseTo(3350 - 0.4 * 75, 3);
   });
   it('屋根は厚さ 150 の分だけ下面が下がり、赤線は棟 1 本（切妻）', () => {
     const m = gabled();
@@ -313,6 +330,7 @@ describe('屋根と妻壁', () => {
     expect(roofMat.color.getHex()).toBe(0x3a3a3a);
     expect(roofMat.opacity).toBe(1);   // 屋根は不透明のまま
     expect(roofMat.depthWrite).toBe(true);
+    expect(roofMat.polygonOffset).toBe(true);   // 天端を屋根面ぴったりに切った壁と同一平面になるので、屋根を手前に寄せてちらつきを止める
     // 描画順: 壁の稜線 < 屋根 < 赤線。屋根が線の後に描かれるので、屋根の下の稜線は屋根に隠れる
     const wallEdge = (g.group.children.find((c) => c.name === 'wall') as Mesh).children[0];
     expect(wallEdge.renderOrder).toBeLessThan(roof.renderOrder);

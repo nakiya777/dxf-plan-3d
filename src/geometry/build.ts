@@ -43,6 +43,11 @@ const ARC_SEGMENTS = 16;
 const STAIRWELL_OVERLAP = 0.5;
 /** 壁端が別の壁に接続しているとみなす許容差（mm） */
 const WALL_JOIN_TOLERANCE = 1;
+/**
+ * 壁の天端を屋根で切るとき、壁厚方向（壁芯 ±厚さ/2 の帯）をサンプルする点数（§8.6）。
+ * 両端（外面・内面）と壁芯を必ず含むよう奇数にする
+ */
+const WALL_BAND_SAMPLES = 5;
 
 export interface BuiltBuilding { group: Group; roofGeom?: RoofGeom }
 
@@ -152,6 +157,12 @@ function endExtension(end: Vec2, self: Wall, walls: Wall[]): number {
   return ext;
 }
 
+/** 壁が占める帯を刻む、壁芯からのオフセット（−厚さ/2 〜 +厚さ/2、両端を含む） */
+function bandOffsets(thickness: number): number[] {
+  const n = WALL_BAND_SAMPLES - 1;
+  return Array.from({ length: WALL_BAND_SAMPLES }, (_, i) => thickness * (i / n - 0.5));
+}
+
 /** 線分 a→b と線分 c→d の交点のパラメータ t（a→b 上、0〜1）。平行なら undefined */
 function segmentIntersectionParam(a: Vec2, b: Vec2, c: Vec2, d: Vec2): number | undefined {
   const rx = b.x - a.x, ry = b.y - a.y, sx = d.x - c.x, sy = d.y - c.y;
@@ -165,8 +176,15 @@ function segmentIntersectionParam(a: Vec2, b: Vec2, c: Vec2, d: Vec2): number | 
 /**
  * 壁: 局所 (s, z) の輪郭を法線方向に厚さ分押し出し、壁芯が中心に来るよう置く。
  * 壁端は接続先の壁厚 / 2 だけ延長し、開口の offset もその分ずらす。
- * `roofGeom` を渡すと天端が屋根の上面まで伸びる（妻壁、§8.6）。天端は 100 mm 刻みに加えて
- * 棟・隅棟の投影との交点でもサンプルするので、棟をまたぐ壁の頂点が棟高に正確に届く
+ *
+ * `roofGeom` を渡すと天端を屋根面で切る（§8.6）。壁には厚みがあるので壁芯 1 点では足りず、
+ * その s で壁が占める帯（壁芯 ±厚さ/2）にわたる屋根上面の最小値を天端にする。
+ * 帯を 1 点で近似すると、軒側では壁の外面のほうが屋根が低いぶんだけ壁が屋根を突き抜ける
+ * （勾配 4 寸・壁厚 150 で 30 mm）。妻壁が三角に伸びるのも同じ式（帯の最小値が H を超える）で出る。
+ *
+ * `heightAt` は屋根面の min なので (x, y) について凹関数。帯の最小値は端（外面・内面）で取り、
+ * サンプル間を直線で結んでも屋根を越えない。s 方向は 100 mm 刻みに加えて棟・隅棟の投影との交点を打つ。
+ * 面が切り替わる s は帯の縁ごとに違うので、交点は帯の各縁で求める（打たないと勾配が変わる箇所で天端が直線で結ばれて食い込む）
  */
 export function wallGeometry(w: Wall, walls: Wall[], openings: Opening[], H: number, floor: FloorBlock, roofGeom?: RoofGeom): BufferGeometry {
   const L = wallLength(w);
@@ -179,12 +197,24 @@ export function wallGeometry(w: Wall, walls: Wall[], openings: Opening[], H: num
   let topProfile: ((s: number) => number) | undefined;
   let sampleAt: number[] = [];
   if (roofGeom) {
-    const heightAlong = (s: number) => roofGeom.heightAt(a.x + ux * s, a.y + uy * s) - floor.baseZ;
-    topProfile = (s) => heightAlong(Math.min(L, Math.max(0, s - ext0)));
-    sampleAt = roofGeom.edges
-      .map(([p, q]) => segmentIntersectionParam(a, b, { x: p.x, y: p.y }, { x: q.x, y: q.y }))
+    const offsets = bandOffsets(w.thickness);
+    topProfile = (s) => {
+      const cx = a.x + ux * (s - ext0), cy = a.y + uy * (s - ext0);
+      let z = Infinity;
+      for (const d of offsets) z = Math.min(z, roofGeom.heightAt(cx + nx * d, cy + ny * d));
+      return z - floor.baseZ;
+    };
+    // 交点は延長ぶんも含む壁の全長で取る（角では延長した側が屋根の低いほうに出るため）
+    const total = L + ext0 + ext1;
+    const from = { x: a.x - ux * ext0, y: a.y - uy * ext0 };
+    const to = { x: b.x + ux * ext1, y: b.y + uy * ext1 };
+    sampleAt = offsets.flatMap((d) => roofGeom.edges
+      .map(([p, q]) => segmentIntersectionParam(
+        { x: from.x + nx * d, y: from.y + ny * d }, { x: to.x + nx * d, y: to.y + ny * d },
+        { x: p.x, y: p.y }, { x: q.x, y: q.y },
+      ))
       .filter((t): t is number => t !== undefined)
-      .map((t) => t * L + ext0);
+      .map((t) => t * total));
   }
   const shifted = openings.map((o) => ({ ...o, offset: o.offset + ext0 }));
   const profile = buildWallProfile(L + ext0 + ext1, H, shifted, topProfile, sampleAt);

@@ -1,10 +1,11 @@
 import { Box3, BufferGeometry, LineBasicMaterial, LineSegments, Mesh, MeshLambertMaterial, Vector3 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { addFloor, addRoof, createBuilding, rotateRidge, setTopZ } from '../model/building';
+import { addFloor, addRoof, createBuilding, rotateRidge, setRoofParam, setTopZ, toggleRoofShape } from '../model/building';
 import { recognizePlan } from '../recognize';
 import { FOREST_S_PATH, hasForestS, planInBox } from '../recognize/testing';
 import type { BuildingModel, PlanModel, Stair, Wall } from '../model/types';
 import { MATERIALS, RENDER_ORDER, buildBuilding, disposeBuilding, prismGeometry, roofGeometry, stairwellHoles, wallGeometry } from './build';
+import type { WallUserData } from './build';
 import { MODEL_TO_SCENE, SCENE_TO_MODEL, toScene } from './coords';
 
 const wall = (id: string, x1: number, y1: number, x2: number, y2: number, exterior = true, thickness = 150): Wall =>
@@ -213,9 +214,9 @@ describe('屋根と妻壁', () => {
     expect(box(roof).max.y).toBeCloseTo(ridgeZ / 1000, 3);
     const gableWall = g.group.children.find((c) => c.name === 'wall' && c.userData.wallId === 'd') as Mesh;
     expect(box(gableWall).max.y).toBeCloseTo(ridgeZ / 1000, 3);
-    // 平側（壁 a）は He のまま
+    // 平側（壁 a）は屋根面で切られる。天端は壁の外面（壁芯 +75）の屋根高 = He − 0.4 × 75
     const eaveWall = g.group.children.find((c) => c.name === 'wall' && c.userData.wallId === 'a') as Mesh;
-    expect(box(eaveWall).max.y).toBeCloseTo(3.35, 6);
+    expect(box(eaveWall).max.y).toBeCloseTo((3350 - 0.4 * 75) / 1000, 6);
   });
   it('妻壁の天端は屋根の上面 h と 1 mm 以内で一致し、切妻側の壁は棟の位置に頂点を持つ', () => {
     const g = buildBuilding(gabled());
@@ -237,12 +238,59 @@ describe('屋根と妻壁', () => {
     for (let i = 0; i < ep.count; i += 2) if (Math.abs(ep.getY(i) - ridgeZ / 1000) < 1e-6 && Math.abs(ep.getY(i + 1) - ridgeZ / 1000) < 1e-6) apexEdges++;
     expect(apexEdges).toBe(1);
   });
-  it('寄棟（既定）では外壁の天端は He のまま', () => {
+  it('寄棟（既定）では外壁 4 面とも屋根面で切られ、天端は He より外面ぶん低い', () => {
     const m = addRoof(oneFloor());
     const g = buildBuilding(m);
-    for (const w of g.group.children.filter((c) => c.name === 'wall')) expect(box(w).max.y).toBeCloseTo(3.35, 6);
+    // 4 面とも等勾配（既定 inset = W/2）なので、どの壁も外面で He − 0.4 × 75 まで下がる
+    for (const w of g.group.children.filter((c) => c.name === 'wall')) expect(box(w).max.y).toBeCloseTo((3350 - 0.4 * 75) / 1000, 6);
     expect(box(g.group.children.find((c) => c.name === 'roof')!).max.y).toBeCloseTo(g.roofGeom!.ridgeZ / 1000, 6);
   });
+  /**
+   * 外壁の「天端 − 屋根の上面」の最大値（mm）。0 以下なら屋根を突き抜けていない。
+   * 壁の天端ポリラインを s 方向に 20 点サンプルし、各点で壁芯・外面・内面の 3 位置を測る
+   */
+  function maxRoofProtrusion(m: BuildingModel): number {
+    const built = buildBuilding(m);
+    const { heightAt } = built.roofGeom!;
+    const walls = m.floors[m.floors.length - 1].plan.walls;
+    let worst = -Infinity;
+    for (const child of built.group.children) {
+      const ud = child.userData as WallUserData;
+      if (child.name !== 'wall' || !ud.exterior) continue;
+      const half = walls.find((w) => w.id === ud.wallId)!.thickness / 2;
+      const len = Math.hypot(ud.b.x - ud.a.x, ud.b.y - ud.a.y);
+      const ux = (ud.b.x - ud.a.x) / len, uy = (ud.b.y - ud.a.y) / len;
+      // 天端 = 同じ s の頂点のうち最も高いもの（開口の切り欠きの底は無視される）
+      const pos = (child as Mesh).geometry.getAttribute('position');
+      const tops = new Map<number, number>();
+      for (let i = 0; i < pos.count; i++) {
+        const p = new Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(SCENE_TO_MODEL);
+        const s = Math.round(((p.x - ud.a.x) * ux + (p.y - ud.a.y) * uy) * 1e3) / 1e3;
+        tops.set(s, Math.max(tops.get(s) ?? -Infinity, p.z));
+      }
+      const pts = [...tops].sort((p, q) => p[0] - q[0]);
+      for (let i = 0; i <= 20; i++) {
+        const s = pts[0][0] + ((pts[pts.length - 1][0] - pts[0][0]) * i) / 20;
+        const k = Math.max(0, pts.findIndex(([t]) => t >= s) - 1);
+        const [s0, z0] = pts[k], [s1, z1] = pts[k + 1];
+        const z = s1 === s0 ? Math.max(z0, z1) : z0 + ((z1 - z0) * (s - s0)) / (s1 - s0);
+        for (const d of [-half, 0, half]) worst = Math.max(worst, z - heightAt(ud.a.x + ux * s + uy * d, ud.a.y + uy * s - ux * d));
+      }
+    }
+    return worst;
+  }
+
+  // シーン座標は m の float32 なので、mm に戻すと 1e-4 mm 級の丸めが乗る。突き抜け 0 の判定はこの幅で見る
+  const FLOAT32_MM = 1e-3;
+  it.each([
+    ['寄棟（既定）', (m: BuildingModel) => m],
+    ['切妻', (m: BuildingModel) => toggleRoofShape(m)],
+    ['急勾配 10 寸', (m: BuildingModel) => setRoofParam(m, { pitchSun: 10 })],
+    ['軒の出 0（壁の帯が屋根の外形からはみ出す）', (m: BuildingModel) => setRoofParam(m, { eave: 0, verge: 0 })],
+  ])('外壁は屋根を突き抜けない: %s', (_name, tweak) => {
+    expect(maxRoofProtrusion(tweak(addRoof(oneFloor())))).toBeLessThan(FLOAT32_MM);
+  });
+
   it('内壁は屋根があっても H のまま', () => {
     const p = { ...plan, walls: [...plan.walls, wall('i', 0, 2957.5, 9100, 2957.5, false, 120)] };
     let m = addRoof(oneFloor(p));

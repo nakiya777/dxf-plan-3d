@@ -12,7 +12,8 @@ const SAMPLE = 100;
  * 壁面の輪郭と穴を作る（設計書 §8.2）。
  * `head ≥ H` の開口は天端に抜ける切り欠きとして輪郭に含め、`head < H` の開口は穴にする
  * （`ExtrudeGeometry` は穴が外形と交わると崩れるので、この振り分けが要る）。
- * `topProfile` を渡すと天端が `max(H, topProfile(s))` になる（妻壁、§8.6）。
+ * `topProfile` を渡すと天端がそのまま `topProfile(s)` になる（屋根の下の外壁、§8.6）。
+ * H で下限を取らないのは、軒側では屋根が H より下に来るため。ここで `max(H, …)` すると壁が屋根を突き抜ける。
  * `sampleAt` は 100 mm 刻みに加えてサンプルする s（屋根面の折れ目との交点）
  */
 export function buildWallProfile(
@@ -22,7 +23,7 @@ export function buildWallProfile(
   topProfile?: (s: number) => number,
   sampleAt: number[] = [],
 ): WallProfile {
-  const top = (s: number) => (topProfile ? Math.max(H, topProfile(s)) : H);
+  const top = (s: number) => (topProfile ? topProfile(s) : H);
   const notches = openings.filter((o) => o.sill < H && o.head >= H).sort((a, b) => a.offset - b.offset);
   // head < H なら sill < head < H なので、穴の条件は head だけで決まる
   const holes = openings

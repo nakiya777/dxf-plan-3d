@@ -51,13 +51,13 @@ describe('buildWallProfile', () => {
     const apex = Math.max(...p.outline.map((q) => q.z));
     expect(apex).toBeCloseTo(4000, 0);
   });
-  it('天端プロファイルは 100 mm 刻みでサンプルし、H を下回る区間は H のまま', () => {
+  it('天端プロファイルは 100 mm 刻みでサンプルし、H を下回っても値をそのまま使う（屋根で切るため）', () => {
     const p = buildWallProfile(1000, 3000, [], (s) => 2000 + s);
     const topSamples = p.outline.filter((q) => q.z > 0).map((q) => q.s).sort((a, b) => a - b);
     expect(topSamples).toEqual([0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]);
-    expect(p.outline.find((q) => q.s === 500 && q.z > 0)?.z).toBe(3000);
+    expect(p.outline.find((q) => q.s === 500 && q.z > 0)?.z).toBe(2500);
     expect(p.outline.find((q) => q.s === 1000 && q.z > 0)?.z).toBe(3000);
-    expect(Math.min(...p.outline.filter((q) => q.z > 0).map((q) => q.z))).toBe(3000);
+    expect(Math.min(...p.outline.filter((q) => q.z > 0).map((q) => q.z))).toBe(2000);
   });
   it('sampleAt で与えた位置（棟との交点）でもサンプルする', () => {
     const p = buildWallProfile(1000, 3000, [], (s) => 3000 + 400 - Math.abs(s - 550) * 0.4, [550]);

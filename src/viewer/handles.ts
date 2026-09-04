@@ -4,6 +4,7 @@ import {
 } from 'three';
 import { ndcFromPointer, pxFromNdc, toModel, toScene } from '../geometry/coords';
 import { centerlineRect, moveFloor, rotateRidge, setInset, setTopZ, toggleRoofShape, topFloorRect } from '../model/building';
+import type { RoofGeom } from '../model/roof';
 import type { BuildingModel, FloorBlock } from '../model/types';
 import { store } from '../state/store';
 import { makeLabel } from './labels';
@@ -12,8 +13,6 @@ import type { Viewer } from './scene';
 type Kind = 'floor' | 'ridgeEnd' | 'ridgeMid' | 'rotate';
 interface HandleData { kind: Kind; floorId?: string; end?: 0 | 1 }
 
-/** ハンドルの色（設計書 §2.3）: 青立方体・橙球・緑菱形・紫回転矢印 */
-const COLORS: Record<Kind, number> = { floor: 0x1e88e5, ridgeEnd: 0xf5a623, ridgeMid: 0x2eaf5c, rotate: 0x6b4de6 };
 /** 高さ／横移動モードを確定するまでのドラッグ量（§6.3: 6 px） */
 const DRAG_THRESHOLD_PX = 6;
 /** 画面上の見かけの大きさ。カメラ距離 1 m あたりの倍率 */
@@ -22,19 +21,6 @@ const SCREEN_SCALE = 0.018;
 const ROTATE_LIFT = 1.2;
 /** 鉛直 1 m を画面に投影した長さ（px）がこれ未満なら高さドラッグを無視する。天頂付近での発散を防ぐ */
 const MIN_VERTICAL_PX = 2;
-const HOVER_TEXT: Record<Kind, string> = { floor: '建物の高さ / 横へ移動', rotate: '棟の向きを変える', ridgeEnd: '', ridgeMid: '寄棟 / 切妻を切り替える' };
-
-/** ジオメトリと材質は共有し、再構築のたびに作らない */
-const GEOMETRY = {
-  floor: new BoxGeometry(1, 1, 1),
-  ridgeEnd: new SphereGeometry(0.5, 16, 12),
-  ridgeMid: new OctahedronGeometry(0.6),
-  rotateArc: new TorusGeometry(0.6, 0.1, 8, 24, Math.PI * 1.5),
-  rotateTip: new ConeGeometry(0.22, 0.5, 12),
-};
-const MATERIAL: Record<Kind, MeshBasicMaterial> = Object.fromEntries(
-  (Object.keys(COLORS) as Kind[]).map((k) => [k, new MeshBasicMaterial({ color: COLORS[k], depthTest: false })]),
-) as Record<Kind, MeshBasicMaterial>;
 
 interface Drag {
   data: HandleData;
@@ -47,12 +33,97 @@ interface Drag {
   moved: boolean;
 }
 
+interface HandlePlacement {
+  position: Vector3;
+  data: HandleData;
+}
+
+interface HandleSpec {
+  color: number;
+  hoverText: string;
+  geometry: BufferGeometry[];
+  placements: (model: BuildingModel, roofGeom?: RoofGeom) => HandlePlacement[];
+  create?: (controller: HandleController, position: Vector3, data: HandleData) => Object3D;
+  onDrag?: (controller: HandleController, e: PointerEvent, drag: Drag, delta: Vector2) => void;
+  onClick?: () => void;
+}
+
 /**
  * ハンドルの生成・ホバー・ドラッグ（設計書 §6.3・§6.5）。
  * ドラッグは `model/` の純粋関数に変換してストアへ書き戻し、描画は Viewer の全再生成に任せる。
  * Phase 2 で viewer を再利用するなら、`HandleController` にストア更新のコールバックを注入する形に変える（今は `store` を直接掴んでいる）
  */
 export class HandleController {
+  /** ハンドル種別ごとの見た目・配置・操作。追加時はこの定義にだけ種別固有の処理を足す */
+  private static readonly HANDLE_SPEC: Record<Kind, HandleSpec> = {
+    floor: {
+      color: 0x1e88e5,
+      hoverText: '建物の高さ / 横へ移動',
+      geometry: [new BoxGeometry(1, 1, 1)],
+      placements: (model) => {
+        const top = model.floors[model.floors.length - 1];
+        const corner = top && southWestCorner(top);
+        return top && corner
+          ? [{ position: toScene(corner.x, corner.y, top.topZ), data: { kind: 'floor', floorId: top.id } }]
+          : [];
+      },
+      onDrag: (controller, e, drag, delta) => controller.dragFloor(e, drag, delta),
+    },
+    ridgeEnd: {
+      color: 0xf5a623,
+      hoverText: '',
+      geometry: [new SphereGeometry(0.5, 16, 12)],
+      placements: (model, roofGeom) => {
+        if (!model.roof || !roofGeom) return [];
+        const [a, b] = roofGeom.ridge;
+        return [
+          { position: toScene(a.x, a.y, a.z), data: { kind: 'ridgeEnd', end: 0 } },
+          { position: toScene(b.x, b.y, b.z), data: { kind: 'ridgeEnd', end: 1 } },
+        ];
+      },
+      onDrag: (controller, e, drag) => controller.dragRidgeEnd(e, drag),
+    },
+    ridgeMid: {
+      color: 0x2eaf5c,
+      hoverText: '寄棟 / 切妻を切り替える',
+      geometry: [new OctahedronGeometry(0.6)],
+      placements: (model, roofGeom) => {
+        if (!model.roof || !roofGeom) return [];
+        const [a, b] = roofGeom.ridge;
+        return [{
+          position: toScene((a.x + b.x) / 2, (a.y + b.y) / 2, a.z),
+          data: { kind: 'ridgeMid' },
+        }];
+      },
+      onClick: () => store.updateModel(toggleRoofShape),
+    },
+    rotate: {
+      color: 0x6b4de6,
+      hoverText: '棟の向きを変える',
+      geometry: [
+        new TorusGeometry(0.6, 0.1, 8, 24, Math.PI * 1.5),
+        new ConeGeometry(0.22, 0.5, 12),
+      ],
+      placements: (model, roofGeom) => {
+        if (!model.roof || !roofGeom) return [];
+        const [a, b] = roofGeom.ridge;
+        return [{
+          position: toScene((a.x + b.x) / 2, (a.y + b.y) / 2, a.z),
+          data: { kind: 'rotate' },
+        }];
+      },
+      create: (_, position, data) => rotateArrow(position, data, HandleController.HANDLE_SPEC.rotate.geometry, HandleController.MATERIAL.rotate),
+      onClick: () => store.updateModel(rotateRidge),
+    },
+  };
+
+  private static readonly MATERIAL: Record<Kind, MeshBasicMaterial> = Object.fromEntries(
+    (Object.keys(HandleController.HANDLE_SPEC) as Kind[]).map((kind) => [
+      kind,
+      new MeshBasicMaterial({ color: HandleController.HANDLE_SPEC[kind].color, depthTest: false }),
+    ]),
+  ) as Record<Kind, MeshBasicMaterial>;
+
   private readonly ray = new Raycaster();
   private readonly label = makeLabel();
   private drag?: Drag;
@@ -96,22 +167,22 @@ export class HandleController {
    */
   private rebuild(model: BuildingModel): void {
     this.viewer.handles.clear();
-    const top = model.floors[model.floors.length - 1];
-    const corner = top && southWestCorner(top);
-    if (top && corner) this.add(GEOMETRY.floor, 'floor', toScene(corner.x, corner.y, top.topZ), { kind: 'floor', floorId: top.id });
     const roofGeom = this.viewer.built?.roofGeom;
-    if (model.roof && roofGeom) {
-      const [a, b] = roofGeom.ridge;
-      this.add(GEOMETRY.ridgeEnd, 'ridgeEnd', toScene(a.x, a.y, a.z), { kind: 'ridgeEnd', end: 0 });
-      this.add(GEOMETRY.ridgeEnd, 'ridgeEnd', toScene(b.x, b.y, b.z), { kind: 'ridgeEnd', end: 1 });
-      const mid = toScene((a.x + b.x) / 2, (a.y + b.y) / 2, a.z);
-      this.add(GEOMETRY.ridgeMid, 'ridgeMid', mid, { kind: 'ridgeMid' });
-      this.viewer.handles.add(rotateArrow(mid));
+    for (const kind of Object.keys(HandleController.HANDLE_SPEC) as Kind[]) {
+      const spec = HandleController.HANDLE_SPEC[kind];
+      for (const { position, data } of spec.placements(model, roofGeom)) {
+        this.viewer.handles.add(this.create(kind, position, data));
+      }
     }
   }
 
+  private create(kind: Kind, position: Vector3, data: HandleData): Object3D {
+    const spec = HandleController.HANDLE_SPEC[kind];
+    return spec.create ? spec.create(this, position, data) : this.add(spec.geometry[0], kind, position, data);
+  }
+
   private add(geometry: BufferGeometry, kind: Kind, pos: Vector3, data: HandleData): Mesh {
-    const mesh = new Mesh(geometry, MATERIAL[kind]);
+    const mesh = new Mesh(geometry, HandleController.MATERIAL[kind]);
     mesh.position.copy(pos);
     mesh.userData = data;
     mesh.renderOrder = 10;
@@ -184,8 +255,7 @@ export class HandleController {
     const delta = new Vector2(e.clientX, e.clientY).sub(d.start);
     if (!d.moved && delta.length() < DRAG_THRESHOLD_PX) return;
     d.moved = true;
-    if (d.data.kind === 'floor') this.dragFloor(e, d, delta);
-    else if (d.data.kind === 'ridgeEnd') this.dragRidgeEnd(e, d);
+    HandleController.HANDLE_SPEC[d.data.kind].onDrag?.(this, e, d, delta);
   }
 
   /** 青ハンドル: 高さモードは画面 Y を鉛直線に射影して setTopZ、横移動モードは水平面にレイキャストして moveFloor */
@@ -233,15 +303,13 @@ export class HandleController {
     this.viewer.controls.enabled = true;
     this.setHoverText('');
     // 紫・緑はクリック（動かさずに離す）で切り替える。紫は棟の向き、緑は寄棟 ⇔ 切妻
-    if (d.moved) return;
-    if (d.data.kind === 'rotate') store.updateModel(rotateRidge);
-    else if (d.data.kind === 'ridgeMid') store.updateModel(toggleRoofShape);
+    if (!d.moved) HandleController.HANDLE_SPEC[d.data.kind].onClick?.();
   }
 
   private hover(e: PointerEvent): void {
     const hit = this.pick(e);
     this.el.style.cursor = hit ? 'pointer' : '';
-    const text = hit ? HOVER_TEXT[(hit.userData as HandleData).kind] : '';
+    const text = hit ? HandleController.HANDLE_SPEC[(hit.userData as HandleData).kind].hoverText : '';
     if (hit && text) this.label.position.copy(hit.position);
     this.setHoverText(text);
   }
@@ -268,14 +336,13 @@ function southWestCorner(floor: FloorBlock): { x: number; y: number } | undefine
 }
 
 /** 紫回転矢印: 3/4 周の弧 + 先端の円錐。水平に寝かせて棟中点の上空に置く */
-function rotateArrow(mid: Vector3): Group {
-  const data: HandleData = { kind: 'rotate' };
+function rotateArrow(mid: Vector3, data: HandleData, geometry: BufferGeometry[], material: MeshBasicMaterial): Group {
   const group = new Group();
   group.position.copy(mid).add(new Vector3(0, ROTATE_LIFT, 0));
   group.userData = data;
-  const arc = new Mesh(GEOMETRY.rotateArc, MATERIAL.rotate);
+  const arc = new Mesh(geometry[0], material);
   arc.rotation.x = -Math.PI / 2;
-  const tip = new Mesh(GEOMETRY.rotateTip, MATERIAL.rotate);
+  const tip = new Mesh(geometry[1], material);
   // 弧の終点（角度 1.5π）に接線方向を向けて置く
   tip.position.set(0, 0, 0.6);
   tip.rotation.z = -Math.PI / 2;

@@ -351,6 +351,50 @@ test('長方形を描くで板ができ、以降 DXF 由来と同じ操作がで
   expect(await page.evaluate(() => window.__app.roofGeom()?.planes.length)).toBe(4);
 });
 
+test('屋根をかけた後に小さい矩形の階を足しても屋根が潰れない（棟の両端が逆転しない）', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'サンプル平面図を読み込む' }).click();
+  await expect(page.getByText('平面図を囲んでください')).toBeVisible();
+  await page.evaluate((r) => window.__app.selectRegion(r), F1);
+  await expect.poll(() => page.evaluate(() => window.__app.getModel().floors.length)).toBe(1);
+  await page.evaluate((id) => window.__app.setTopZ(id, 3650), (await page.evaluate(() => window.__app.getModel().floors[0])).id);
+  await page.evaluate(() => window.__app.addRoof());
+  await waitFrames(page);
+  // 7,280 角の 1 階にかけた寄棟。inset は W/2 = 3,640 で棟の長さは 0
+  expect((await page.evaluate(() => window.__app.getModel().roof))!.inset).toEqual([3640, 3640]);
+
+  // 「長方形を描く」で 1 階より小さい矩形を足す（画面水平ドラッグ。A9 の試験と同じ操作）
+  await page.getByRole('button', { name: '長方形を描く' }).click();
+  const box = (await page.locator('canvas').boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx - 150, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 150, cy, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.__app.getModel().floors.length)).toBe(2);
+  await waitFrames(page);
+
+  const roof = (await page.evaluate(() => window.__app.getModel().roof))!;
+  const g = (await page.evaluate(() => window.__app.roofGeom()))!;
+  // 棟の両端は棟方向に沿って昇順のまま（inset > L/2 になると逆転して屋根が板状に潰れる）
+  const along = roof.axis;
+  expect(g.ridge[0][along]).toBeLessThanOrEqual(g.ridge[1][along]);
+  expect([2, 4]).toContain(g.planes.length);
+  // inset は新しい最上階の外壁芯（棟方向の長さ L）の半分を超えない
+  const top = await page.evaluate(() => {
+    const m = window.__app.getModel();
+    const f = m.floors[m.floors.length - 1];
+    const pts = f.plan.walls.filter((w: Wall) => w.exterior).flatMap((w: Wall) => [w.a, w.b]);
+    const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y);
+    return { dx: Math.max(...xs) - Math.min(...xs), dy: Math.max(...ys) - Math.min(...ys) };
+  });
+  const L = roof.axis === 'x' ? top.dx : top.dy;
+  expect(roof.inset[0]).toBeLessThanOrEqual(L / 2);
+  expect(roof.inset[1]).toBeLessThanOrEqual(L / 2);
+  await page.screenshot({ path: 'test-results/roof-refit.png' });
+});
+
 test('「壁を透かす」OFF では全壁が不透明で線は depthTest あり、ON で 0.85/0.15 と depthTest 無し、正面の壁は回すと入れ替わり、戻すと元に戻る', async ({ page }) => {
   await page.goto('/');
   await loadAndSelect(page, FIXTURE, F1);

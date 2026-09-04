@@ -137,7 +137,8 @@ function nextFloorId(floors: FloorBlock[]): string {
 
 /**
  * 階を積む（§6.2 手順 4）。1 階目は外壁芯の中心を原点に置き `baseZ = floor1Level`、
- * 2 階目以降は直下に位置合わせして `baseZ = 直下.topZ + slabThickness`。壁はまだ立てない（topZ = baseZ）
+ * 2 階目以降は直下に位置合わせして `baseZ = 直下.topZ + slabThickness`。壁はまだ立てない（topZ = baseZ）。
+ * 屋根があるときは新しい最上階に載せ替える（§9、`refitRoof`）
  */
 export function addFloor(model: BuildingModel, plan: PlanModel): BuildingModel {
   const below = model.floors[model.floors.length - 1];
@@ -152,7 +153,8 @@ export function addFloor(model: BuildingModel, plan: PlanModel): BuildingModel {
     baseZ,
     topZ: baseZ,
   };
-  return { ...model, floors: [...model.floors, floor] };
+  const stacked: BuildingModel = { ...model, floors: [...model.floors, floor] };
+  return model.roof ? { ...stacked, roof: refitRoof(model.roof, topFloorRect(stacked)) } : stacked;
 }
 
 /** 積み重ねの不変条件を回復する: base_i = top_{i−1} + slab。各階の高さ（top − base）は保つ */
@@ -209,11 +211,30 @@ export function defaultInset(rect: Box2, axis: 'x' | 'y'): number {
   return Math.min(W / 2, L / 2);
 }
 
+/** 棟を載せる向き（長手方向）。同寸なら X（§6.4） */
+const longAxis = (rect: Box2): 'x' | 'y' => (rect.maxX - rect.minX >= rect.maxY - rect.minY ? 'x' : 'y');
+
+/**
+ * 屋根を新しい最上階の外接矩形に合わせ直す（§9 の「屋根をその階に載せ替える」）。
+ * `axis` と `inset` は屋根をかけた時点の矩形で決まるので、そのままにすると新しい階が小さいときに
+ * `inset > L/2` になり、棟の両端が交差して屋根が板状に潰れる。
+ * - `axis`: 新しい矩形の長手方向で決め直す
+ * - `inset`: 新しい矩形の既定の寄棟位置に戻す。ただし 0（切妻）の端は 0 のまま（切妻にした意図を消さない）
+ * - `ridgeOffset`: 可動範囲（±(W/2 − 300)）が変わるので 0 に戻す
+ * - `pitchSun` / `eave` / `verge` / `thickness`: スライダーで決めた値なので保つ
+ */
+function refitRoof(roof: Roof, rect: Box2): Roof {
+  const axis = longAxis(rect);
+  const preset = defaultInset(rect, axis);
+  const inset: [number, number] = [roof.inset[0] <= 0 ? 0 : preset, roof.inset[1] <= 0 ? 0 : preset];
+  return { ...roof, axis, inset, ridgeOffset: 0 };
+}
+
 /** 屋根をかける（§6.4）。棟は長手方向、勾配 4 寸、軒の出・ケラバ 600、屋根厚 150、両端は既定の寄棟 */
 export function addRoof(model: BuildingModel): BuildingModel {
   if (model.floors.length === 0) return model;
   const rect = topFloorRect(model);
-  const axis: 'x' | 'y' = rect.maxX - rect.minX >= rect.maxY - rect.minY ? 'x' : 'y';
+  const axis = longAxis(rect);
   const inset = defaultInset(rect, axis);
   const roof: Roof = { axis, ridgeOffset: 0, inset: [inset, inset], ...ROOF_DEFAULTS };
   return { ...model, roof };

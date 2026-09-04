@@ -4,7 +4,7 @@ DXF の平面図を読み込み、壁（開口部・階段付き）を立ち上�
 
 ## 状態
 
-- **2026-09-04:** MVP（実装計画 Task 1〜17）完了。単体テスト 210 件、E2E 12 件が通る
+- **2026-09-04:** MVP（実装計画 Task 1〜17）完了。単体テスト 217 件、E2E 13 件が通る
 - 参考動画（`specs/001-dxf-massing-mvp/reference/reference.mp4`）に映るデモと機能を同一にすることがゴール。動画の流れは次の 4 段
 
 1. DXF を読み込み、平面図の 1 階を矩形で囲むと壁・開口・階段が立ち上がる
@@ -28,15 +28,15 @@ Node 22 を前提にしている。
 |---|---|
 | `npm ci` | 依存の導入。`package-lock.json` に固定した版をそのまま入れる（依存は exact 固定。幾何ライブラリの挙動が版で変わると認識結果が変わるため） |
 | `npm run dev` | 開発サーバー。`http://localhost:5173` **固定**（`vite.config.ts` の `strictPort`）。5173 が埋まっていると起動に失敗する。別ポートへ逃がさない理由は、E2E が `localhost:5173` を決め打ちしているため、逃がすと別のアプリに繋いで試験してしまうから |
-| `npm test` | 単体テスト（vitest）。210 件 |
+| `npm test` | 単体テスト（vitest）。217 件 |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run build` | 型検査のあと `dist/` に本番ビルドを出す |
-| `npm run e2e` | E2E（Playwright、12 件）。初回だけ `npx playwright install chromium` が要る。開発サーバーは Playwright が自分で起こすので、先に `npm run dev` を打つ必要はない（動いていればそれを使う）。CI では `reuseExistingServer` を無効にしてあり、必ず自分で起こす |
+| `npm run e2e` | E2E（Playwright、13 件）。初回だけ `npx playwright install chromium` が要る。開発サーバーは Playwright が自分で起こすので、先に `npm run dev` を打つ必要はない（動いていればそれを使う）。CI では `reuseExistingServer` を無効にしてあり、必ず自分で起こす |
 | `npm run make-fixtures` | 自作フィクスチャ `fixtures/sample-house*.dxf` を `scripts/make-sample-dxf.ts` から再生成する |
 
 ## 実図面フィクスチャについて
 
-`fixtures/forest-s/`（実在する住宅の図面）は権利上の配慮で公開リポジトリに含めず、ローカルにだけ置く。無くてもテストとビルドは通る。実図面を使う試験は **skip** として数えられ、失敗にはならない（単体 210 件中 13 件、E2E 12 件中 1 件）。判定は `src/recognize/testing.ts` の `hasForestS()`（`existsSync`）で、実図面がある環境では従来どおり全件走る。
+`fixtures/forest-s/`（実在する住宅の図面）は権利上の配慮で公開リポジトリに含めず、ローカルにだけ置く。無くてもテストとビルドは通る。実図面を使う試験は **skip** として数えられ、失敗にはならない（単体 217 件中 13 件、E2E 13 件中 1 件）。判定は `src/recognize/testing.ts` の `hasForestS()`（`existsSync`）で、実図面がある環境では従来どおり全件走る。
 
 ## 使い方
 
@@ -62,8 +62,8 @@ Node 22 を前提にしている。
 
 | 項目 | 値 |
 |---|---|
-| 単体テスト | 210 件 / 15 ファイル、0.6 秒 |
-| E2E | 9 件 |
+| 単体テスト | 217 件 / 15 ファイル、0.6 秒 |
+| E2E | 13 件 |
 | `buildBuilding`（forest-s 2 階建て、壁・開口・階段の 3D 生成） | 4〜5 ms |
 | `setTopZ` 1 回の同期コスト（store 更新 → 3D 再生成 → ハンドル再構築） | 自作フィクスチャ 1.09 ms / forest-s 1.77 ms |
 | ドラッグ中の fps | 60（vsync 上限で頭打ち。余裕は上の同期コストで見る） |

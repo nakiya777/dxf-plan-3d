@@ -276,3 +276,54 @@ describe('屋根', () => {
     expect(setRoofParam(roofless, { pitchSun: 5 }).roof).toBeUndefined();
   });
 });
+
+describe('階を足したときの屋根の載せ替え', () => {
+  /** 外壁だけの矩形平面（通り芯なし）。載せ替えの試験で階ごとに寸法を変える */
+  const sized = (w: number, h: number): PlanModel => ({ ...bare(), walls: rectWalls(0, 0, w, h) });
+
+  it('小さい階を足すと inset が新しい既定に戻り、L/2 を超えない', () => {
+    let m = addRoof(setTopZ(addFloor(createBuilding(), plan()), 'f1', 3350));
+    expect(m.roof?.inset).toEqual([W / 2, W / 2]);
+    m = addFloor(m, sized(3000, 2000));
+    const rect = topFloorRect(m);
+    expect([rect.maxX - rect.minX, rect.maxY - rect.minY]).toEqual([3000, 2000]);
+    // 棟方向 L = 3,000・幅 W = 2,000 なので既定は min(1000, 1500) = 1,000
+    expect(m.roof?.inset).toEqual([1000, 1000]);
+    expect(m.roof!.inset[0] + m.roof!.inset[1]).toBeLessThanOrEqual(rect.maxX - rect.minX);   // 棟の両端が交差しない
+  });
+  it('切妻（inset [0, 0]）は階を足しても切妻のまま', () => {
+    let m = toggleRoofShape(addRoof(addFloor(createBuilding(), plan())));
+    expect(m.roof?.inset).toEqual([0, 0]);
+    m = addFloor(m, sized(3000, 2000));
+    expect(m.roof?.inset).toEqual([0, 0]);
+  });
+  it('片端だけ切妻なら、0 の端は 0 のまま、寄棟の端だけ新しい既定に戻る', () => {
+    let m = setInset(addRoof(addFloor(createBuilding(), plan())), 0, 0);
+    m = addFloor(m, sized(3000, 2000));
+    expect(m.roof?.inset).toEqual([0, 1000]);
+  });
+  it('長手方向が入れ替わる階を足すと axis も入れ替わる', () => {
+    let m = addRoof(addFloor(createBuilding(), plan()));
+    expect(m.roof?.axis).toBe('x');
+    m = addFloor(m, sized(2000, 6000));
+    // 棟は Y 方向、幅 W = 2,000・長さ L = 6,000 なので既定は 1,000
+    expect(m.roof).toMatchObject({ axis: 'y', inset: [1000, 1000] });
+  });
+  it('勾配・軒の出・ケラバ・屋根厚は保ち、ridgeOffset は 0 に戻す', () => {
+    let m = addRoof(addFloor(createBuilding(), plan()));
+    m = setRidgeOffset(setRoofParam(m, { pitchSun: 7, eave: 900, verge: 300, thickness: 200 }), 500);
+    expect(m.roof?.ridgeOffset).toBe(500);
+    m = addFloor(m, sized(3000, 2000));
+    expect(m.roof).toMatchObject({ pitchSun: 7, eave: 900, verge: 300, thickness: 200, ridgeOffset: 0 });
+  });
+  it('同寸の階を足したときは屋根のパラメータが変わらない（棟はスラブ厚ぶん上がるだけ）', () => {
+    let m = addRoof(setTopZ(addFloor(createBuilding(), plan()), 'f1', 3350));
+    const before = m.roof;
+    m = addFloor(m, plan(20000, 300));
+    expect(m.roof).toEqual(before);
+    expect(m.floors[1].baseZ).toBe(3350 + 100);
+  });
+  it('屋根が無ければ何も足さない', () => {
+    expect(addFloor(addFloor(createBuilding(), plan()), sized(3000, 2000)).roof).toBeUndefined();
+  });
+});

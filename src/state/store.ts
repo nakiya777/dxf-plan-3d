@@ -6,7 +6,7 @@ export type Mode = 'idle' | 'select2d' | 'drawRect';
 
 /**
  * アプリ全体の状態。`model` は不変の BuildingModel 1 つ（設計書 §4.2）。
- * `seeThrough` はカメラに向いている外壁を半透明にする表示切替（モデルには含めない）
+ * `seeThrough` は「壁を透かす」の表示切替（壁を薄くして線を壁越しに見せ、カメラに向いている外壁はさらに薄くする）（モデルには含めない）
  */
 export interface AppState { model: BuildingModel; mode: Mode; seeThrough: boolean; plan2d?: Plan2D; notice?: string; busy?: string }
 

@@ -24,10 +24,12 @@ export interface AppHooks {
   roofGeom: () => RoofGeom | undefined;
   /** 青ハンドルの画面位置（キャンバス左上からの px）。ドラッグの起点探しに使う。ハンドルは最上階にしか無いので、下の階は undefined */
   handleScreen: (floorId: string) => { x: number; y: number } | undefined;
-  /** 「正面の壁を透かす」の切替（パネルのボタンと同じ） */
+  /** 「壁を透かす」の切替（パネルのボタンと同じ） */
   setSeeThrough: (on: boolean) => void;
-  /** 直前の描画で半透明になっている壁 id の一覧。切替やカメラ移動の後は 1 フレーム待ってから読む */
+  /** 直前の描画で 0.15 の正面壁用材質になっている壁 id の一覧。切替やカメラ移動の後は 1 フレーム待ってから読む */
   seeThroughWalls: () => string[];
+  /** 共有材質（本体・稜線・青線）と正面壁用材質の状態。OFF で不透明・depthTest あり、ON で 0.85/0.15・depthTest 無しになる */
+  materialState: () => ReturnType<Viewer['materialState']>;
   /** カメラの方位角（度）を注視点まわりで変える。距離と仰角は変えない */
   setCameraAzimuth: (deg: number) => void;
 }
@@ -69,6 +71,7 @@ export function installTestHooks(viewer: Viewer): void {
     },
     setSeeThrough: (on) => store.set({ seeThrough: on }),
     seeThroughWalls: () => viewer.seeThroughWalls(),
+    materialState: () => viewer.materialState(),
     setCameraAzimuth: (deg) => viewer.setCameraAzimuth(deg),
   };
 }

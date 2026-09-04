@@ -9,21 +9,20 @@ import { MODEL_TO_SCENE } from './coords';
 import { buildWallProfile } from './wallShape';
 
 /**
- * 材質（設計書 §8.2・§8.4・§8.1）。参考動画の見え方に合わせ、本体（壁・板・基礎・階段）はほぼ白の薄い透過面、
- * 線（稜線・青の飾り線）は `depthTest` 無しで壁越しにも見える。屋根は不透明の濃灰、屋根編集線は赤。
- * 線と屋根に `transparent: true` を付けるのは色のためではなく、three.js の透過パス（本体の後）で描かせて
- * `RENDER_ORDER` の順序を効かせるため（不透明パスは透過パスより常に先に描かれる）
+ * 材質（設計書 §8.2・§8.4・§8.1）。本体（壁・板・基礎・階段）はほぼ白、稜線は濃灰、飾り線は青、屋根は濃灰、屋根編集線は赤。
+ * 既定は通常表示（本体は不透明、線は深度検査あり）。「壁を透かす」ON では `viewer/seeThroughStyle` の
+ * `applySeeThroughStyle` がこの共有材質の `transparent` `opacity` `depthTest` を一括で書き換える（材質の実体は差し替えない）
  */
 export const MATERIALS = {
-  body: new MeshLambertMaterial({ color: 0xf4f4f4, transparent: true, opacity: 0.85 }),
-  roof: new MeshLambertMaterial({ color: 0x3a3a3a, transparent: true }),
-  edge: new LineBasicMaterial({ color: 0x1a1a1a, transparent: true, depthTest: false }),
-  decor: new LineBasicMaterial({ color: 0x3b7dd8, transparent: true, depthTest: false }),
-  roofEdge: new LineBasicMaterial({ color: 0xe53935, transparent: true }),
+  body: new MeshLambertMaterial({ color: 0xf4f4f4 }),
+  roof: new MeshLambertMaterial({ color: 0x3a3a3a }),
+  edge: new LineBasicMaterial({ color: 0x1a1a1a }),
+  decor: new LineBasicMaterial({ color: 0x3b7dd8 }),
+  roofEdge: new LineBasicMaterial({ color: 0xe53935 }),
 };
 
 /**
- * 描画順。本体 → 線 → 屋根 → 屋根の赤線。
+ * 描画順。本体 → 線 → 屋根 → 屋根の赤線。通常表示（全部が不透明パス・深度検査あり）では効かず、「壁を透かす」ON のときだけ意味を持つ。
  * 本体は `depthWrite` を残したまま three.js の既定（奥から手前）で並べ、線はその後に `depthTest` 無しで重ねる。
  * 屋根は線の後に深度検査ありで描くので、屋根に隠れる壁の稜線は屋根が塗り潰し、屋根の上に線が浮かない。
  * 赤線は屋根の後。屋根の裏側の隅棟が透けて浮かないよう、赤線だけは `depthTest` を残す（上面から 5 mm 浮かせてあるので屋根には隠れない）
@@ -54,7 +53,7 @@ export interface WallUserData { wallId: string; a: Vec2; b: Vec2; exterior: bool
  * BuildingModel → three.js の Group。毎回すべて作り直す（設計書 §4.2）。
  * 子の `name` は foundation / slab / wall / stair / decor / roof / roofEdge。
  * 壁は `userData` に `wallId`・壁芯の両端 `a` `b`（建物座標 mm、階の offset 込み）・`exterior` を持つ（`WallUserData`）。
- * viewer 側の「正面の壁を透かす」がこれで外向き法線を出す
+ * viewer 側の「壁を透かす」がこれで外向き法線を出す
  */
 export function buildBuilding(model: BuildingModel): BuiltBuilding {
   const group = new Group();

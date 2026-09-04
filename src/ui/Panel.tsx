@@ -72,9 +72,9 @@ export function Panel() {
           mm
         </label>
         <div className="row">
-          <button onClick={() => store.set({ seeThrough: !s.seeThrough })}>{s.seeThrough ? '正面の壁を戻す' : '正面の壁を透かす'}</button>
+          <button onClick={() => store.set({ seeThrough: !s.seeThrough })}>{s.seeThrough ? '壁を戻す' : '壁を透かす'}</button>
         </div>
-        <p className="hint">カメラに向いている外壁だけを半透明にします。回すと透ける壁が入れ替わります。</p>
+        <p className="hint">壁を薄くし、輪郭線と床の線を壁越しに見せます。カメラに向いている外壁はさらに薄くなります。</p>
       </section>
       <section>
         <h3>屋根</h3>

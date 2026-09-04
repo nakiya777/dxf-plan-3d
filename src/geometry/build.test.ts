@@ -103,7 +103,7 @@ describe('buildBuilding', () => {
     expect(bubble.max.x - bubble.min.x).toBeCloseTo(0.5, 6);
     const decorMat = decor[0].material as LineBasicMaterial;
     expect(decorMat.color.getHex()).toBe(0x3b7dd8);
-    expect(decorMat.depthTest).toBe(false);   // 壁越しにも見える
+    expect(decorMat.depthTest).toBe(true);    // 既定は通常表示。壁越しに見せるのは「壁を透かす」ON のときだけ（viewer/seeThroughStyle）
     expect(decor[0].renderOrder).toBe(RENDER_ORDER.line);
   });
   it('2 階は 1 階の板の上（topZ + 100）から始まり、2 階の板に基礎は付かない', () => {
@@ -171,18 +171,18 @@ describe('wallGeometry', () => {
     expect(xs.has(-3.55)).toBe(true);
     expect(xs.has(-1.73)).toBe(true);
   });
-  it('本体はほぼ白の薄い透過面（opacity 0.85・depthWrite あり）、稜線は濃灰で depthTest 無し・面より後に描く', () => {
+  it('既定は通常表示: 本体はほぼ白の不透明面、稜線は濃灰で depthTest あり。renderOrder は線が面より後', () => {
     const w = children(oneFloor(), 'wall')[0] as Mesh;
     const body = w.material as MeshLambertMaterial;
     expect(body.color.getHex()).toBe(0xf4f4f4);
-    expect(body.transparent).toBe(true);
-    expect(body.opacity).toBe(0.85);
+    expect(body.transparent).toBe(false);
+    expect(body.opacity).toBe(1);
     expect(body.depthWrite).toBe(true);
     const edge = w.children[0] as LineSegments;
     const edgeMat = edge.material as LineBasicMaterial;
     expect(edgeMat.color.getHex()).toBe(0x1a1a1a);
-    expect(edgeMat.depthTest).toBe(false);
-    expect(edgeMat.transparent).toBe(true);   // 透過パスで面の後に描かせるため
+    expect(edgeMat.depthTest).toBe(true);
+    expect(edgeMat.transparent).toBe(false);
     expect(edge.renderOrder).toBe(RENDER_ORDER.line);
     expect(edge.renderOrder).toBeGreaterThan(w.renderOrder);
   });

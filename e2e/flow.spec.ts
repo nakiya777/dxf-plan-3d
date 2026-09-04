@@ -284,17 +284,28 @@ test('長方形を描くで板ができ、以降 DXF 由来と同じ操作がで
   expect(await page.evaluate(() => window.__app.roofGeom()?.planes.length)).toBe(4);
 });
 
-test('「正面の壁を透かす」でカメラに向いた外壁だけが半透明になり、回すと入れ替わり、戻すと 0 本になる', async ({ page }) => {
+test('「壁を透かす」OFF では全壁が不透明で線は depthTest あり、ON で 0.85/0.15 と depthTest 無し、正面の壁は回すと入れ替わり、戻すと元に戻る', async ({ page }) => {
   await page.goto('/');
   await loadAndSelect(page, FIXTURE, F1);
   await page.evaluate((id) => window.__app.setTopZ(id, 3650), (await page.evaluate(() => window.__app.getModel().floors[0])).id);
   await loadAndSelect(page, FIXTURE, F2);
   await waitFrames(page);
+  // OFF（既定）: 全壁が不透明、線は深度検査あり
   expect(await page.evaluate(() => window.__app.seeThroughWalls())).toEqual([]);
+  const off = await page.evaluate(() => window.__app.materialState());
+  expect(off.body).toEqual({ opacity: 1, transparent: false });
+  expect(off.edge.depthTest).toBe(true);
+  expect(off.decor.depthTest).toBe(true);
 
-  await page.getByRole('button', { name: '正面の壁を透かす' }).click();
-  await expect(page.getByRole('button', { name: '正面の壁を戻す' })).toBeVisible();
+  await page.getByRole('button', { name: '壁を透かす' }).click();
+  await expect(page.getByRole('button', { name: '壁を戻す' })).toBeVisible();
   await waitFrames(page);
+  // ON: 本体 0.85、正面の壁 0.15、線は壁越し
+  const on = await page.evaluate(() => window.__app.materialState());
+  expect(on.body).toEqual({ opacity: 0.85, transparent: true });
+  expect(on.frontWall.opacity).toBe(0.15);
+  expect(on.edge.depthTest).toBe(false);
+  expect(on.decor.depthTest).toBe(false);
   const front = await page.evaluate(() => window.__app.seeThroughWalls());
   expect(front.length).toBeGreaterThan(0);
   const model = await page.evaluate(() => window.__app.getModel());
@@ -310,9 +321,13 @@ test('「正面の壁を透かす」でカメラに向いた外壁だけが半�
   expect(back.some((id) => !front.includes(id))).toBe(true);
   expect(front.some((id) => !back.includes(id))).toBe(true);
 
-  await page.getByRole('button', { name: '正面の壁を戻す' }).click();
+  await page.getByRole('button', { name: '壁を戻す' }).click();
   await waitFrames(page);
   expect(await page.evaluate(() => window.__app.seeThroughWalls())).toEqual([]);
+  const back2 = await page.evaluate(() => window.__app.materialState());
+  expect(back2.body).toEqual({ opacity: 1, transparent: false });
+  expect(back2.edge.depthTest).toBe(true);
+  expect(back2.decor.depthTest).toBe(true);
 });
 
 /** 壁レイヤーの無い最小 DXF（三角形の LINE 3 本）。帯を作らないので壁 0 本になる */

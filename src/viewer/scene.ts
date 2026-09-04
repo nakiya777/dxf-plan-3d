@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { buildBuilding, disposeBuilding, MATERIALS, type BuiltBuilding, type WallUserData } from '../geometry/build';
 import { wallFacesCamera } from '../geometry/facing';
+import { applySeeThroughStyle } from './seeThroughStyle';
 import type { BuildingModel, Vec2 } from '../model/types';
 
 // 座標変換は viewer の窓口として出す。ui/ は geometry/ を直接掴まず、ここから取る（層: ui → viewer → geometry）
@@ -22,7 +23,7 @@ const MAX_POLAR_ANGLE = Math.PI / 2 - 0.05;
 /** 照明の強さ（従来単位）。環境光を主にし、平行光は面の向きが分かる程度に留める */
 const AMBIENT_INTENSITY = 1.0;
 const SUN_INTENSITY = 0.25;
-/** 「正面の壁を透かす」の不透明度。稜線は残るので、輪郭で位置は分かる */
+/** 「壁を透かす」ON でカメラに向いている外壁の不透明度。稜線は残るので、輪郭で位置は分かる */
 const SEE_THROUGH_OPACITY = 0.15;
 
 /**
@@ -44,7 +45,7 @@ export class Viewer {
   private readonly onFrame: (() => void)[] = [];
   private readonly onBuilt: ((built: BuiltBuilding, model: BuildingModel) => void)[] = [];
   private readonly resizeObserver: ResizeObserver;
-  /** 「正面の壁を透かす」の状態。ON の間は毎フレーム、カメラに向いている外壁の材質を差し替える */
+  /** 「壁を透かす」の状態。ON の間は毎フレーム、カメラに向いている外壁の材質を差し替える */
   private seeThrough = false;
   /** 半透明の壁の材質。本体と同じ色で不透明度だけ 0.15。1 つ作って共有し、`dispose` で捨てる（`disposeBuilding` は共有材質を触らない） */
   private readonly seeThroughMaterial = new MeshLambertMaterial({ color: MATERIALS.body.color, transparent: true, opacity: SEE_THROUGH_OPACITY, depthWrite: false });
@@ -121,11 +122,25 @@ export class Viewer {
     this.onBuilt.forEach((fn) => fn(this.built!, model));
   }
 
-  /** 「正面の壁を透かす」の ON/OFF。OFF にした瞬間に全部の壁を共有材質へ戻す */
+  /**
+   * 「壁を透かす」の ON/OFF。共有材質の描き方（本体の不透明度・線の深度検査）を `applySeeThroughStyle` で一括切替する。
+   * OFF にした瞬間に全部の壁を共有材質へ戻すので、通常表示では正面の壁も不透明になる
+   */
   setSeeThrough(on: boolean): void {
     if (on === this.seeThrough) return;
     this.seeThrough = on;
+    applySeeThroughStyle(MATERIALS, on);
     if (!on) for (const m of this.exteriorWalls) m.material = MATERIALS.body;
+  }
+
+  /** 共有材質と正面壁用材質のいまの状態（E2E の確認用） */
+  materialState(): { body: { opacity: number; transparent: boolean }; edge: { depthTest: boolean }; decor: { depthTest: boolean }; frontWall: { opacity: number } } {
+    return {
+      body: { opacity: MATERIALS.body.opacity, transparent: MATERIALS.body.transparent },
+      edge: { depthTest: MATERIALS.edge.depthTest },
+      decor: { depthTest: MATERIALS.decor.depthTest },
+      frontWall: { opacity: this.seeThroughMaterial.opacity },
+    };
   }
 
   /** いま半透明になっている壁の id（E2E の確認用） */

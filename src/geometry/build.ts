@@ -60,41 +60,47 @@ export function buildBuilding(model: BuildingModel): BuiltBuilding {
   const top = model.floors[model.floors.length - 1];
   const roofGeom = model.roof && top ? solveRoof(model.roof, topFloorRect(model), top.topZ) : undefined;
 
-  model.floors.forEach((floor, i) => {
-    const outline = floor.plan.outline.map((p) => shiftPoint(p, floor.offset));
-    const slabHoles = i > 0 ? stairwellHoles(model.floors[i - 1], floor) : [];
-    if (outline.length > 0) {
-      const slabBottom = floor.baseZ - model.slabThickness;
-      // 1 階は板の下に GL から基礎を描く（§8.1）
-      if (i === 0 && slabBottom > 0) group.add(named(solidMesh(prismGeometry(outline, 0, slabBottom)), 'foundation'));
-      group.add(named(solidMesh(prismGeometry(outline, slabBottom, floor.baseZ, slabHoles.map((h) => h.poly))), 'slab'));
-    }
-    const H = floor.topZ - floor.baseZ;
-    for (const w of floor.plan.walls) {
-      const useRoof = roofGeom !== undefined && floor === top && w.exterior;
-      const mesh = solidMesh(wallGeometry(w, floor.plan.walls, floor.plan.openings.filter((o) => o.wallId === w.id), H, floor, useRoof ? roofGeom : undefined));
-      const wallData: WallUserData = { wallId: w.id, a: shiftPoint(w.a, floor.offset), b: shiftPoint(w.b, floor.offset), exterior: w.exterior };
-      mesh.userData = wallData;
-      group.add(named(mesh, 'wall'));
-    }
-    const holeSet = new Set(slabHoles.map((h) => h.stairIndex));
-    floor.plan.stairs.forEach((st, k) => {
-      if (!holeSet.has(k)) group.add(named(solidMesh(stairGeometry(st, floor, H)), 'stair'));
-    });
-    group.add(named(decorLines(floor.plan.decorLines, floor, floor.baseZ + DECOR_LIFT), 'decor'));
-    group.add(named(axisBubbles(floor), 'decor'));
-  });
+  model.floors.forEach((floor, i) => buildFloor(group, model, floor, i, top, roofGeom));
 
-  if (roofGeom && model.roof) {
-    const roofMesh = named(new Mesh(roofGeometry(roofGeom, model.roof.thickness), MATERIALS.roof), 'roof');
-    roofMesh.renderOrder = RENDER_ORDER.roof;
-    group.add(roofMesh);
-    const lifted = roofGeom.edges.map(([a, b]): [number[], number[]] => [[a.x, a.y, a.z + ROOF_EDGE_LIFT], [b.x, b.y, b.z + ROOF_EDGE_LIFT]]);
-    const roofLines = named(segmentsToLines(lifted, MATERIALS.roofEdge), 'roofEdge');
-    roofLines.renderOrder = RENDER_ORDER.roofEdge;
-    group.add(roofLines);
-  }
+  if (roofGeom && model.roof) buildRoof(group, roofGeom, model.roof.thickness);
   return { group, roofGeom };
+}
+
+/** 1 階分の基礎・スラブ・壁・階段・飾り線・通り芯バブルを組み立てる */
+function buildFloor(group: Group, model: BuildingModel, floor: FloorBlock, index: number, top: FloorBlock | undefined, roofGeom?: RoofGeom): void {
+  const outline = floor.plan.outline.map((p) => shiftPoint(p, floor.offset));
+  const slabHoles = index > 0 ? stairwellHoles(model.floors[index - 1], floor) : [];
+  if (outline.length > 0) {
+    const slabBottom = floor.baseZ - model.slabThickness;
+    // 1 階は板の下に GL から基礎を描く（§8.1）
+    if (index === 0 && slabBottom > 0) group.add(named(solidMesh(prismGeometry(outline, 0, slabBottom)), 'foundation'));
+    group.add(named(solidMesh(prismGeometry(outline, slabBottom, floor.baseZ, slabHoles.map((h) => h.poly))), 'slab'));
+  }
+  const H = floor.topZ - floor.baseZ;
+  for (const w of floor.plan.walls) {
+    const useRoof = roofGeom !== undefined && floor === top && w.exterior;
+    const mesh = solidMesh(wallGeometry(w, floor.plan.walls, floor.plan.openings.filter((o) => o.wallId === w.id), H, floor, useRoof ? roofGeom : undefined));
+    const wallData: WallUserData = { wallId: w.id, a: shiftPoint(w.a, floor.offset), b: shiftPoint(w.b, floor.offset), exterior: w.exterior };
+    mesh.userData = wallData;
+    group.add(named(mesh, 'wall'));
+  }
+  const holeSet = new Set(slabHoles.map((h) => h.stairIndex));
+  floor.plan.stairs.forEach((st, k) => {
+    if (!holeSet.has(k)) group.add(named(solidMesh(stairGeometry(st, floor, H)), 'stair'));
+  });
+  group.add(named(decorLines(floor.plan.decorLines, floor, floor.baseZ + DECOR_LIFT), 'decor'));
+  group.add(named(axisBubbles(floor), 'decor'));
+}
+
+/** 屋根本体と屋根の赤い編集線を組み立てる */
+function buildRoof(group: Group, roofGeom: RoofGeom, thickness: number): void {
+  const roofMesh = named(new Mesh(roofGeometry(roofGeom, thickness), MATERIALS.roof), 'roof');
+  roofMesh.renderOrder = RENDER_ORDER.roof;
+  group.add(roofMesh);
+  const lifted = roofGeom.edges.map(([a, b]): [number[], number[]] => [[a.x, a.y, a.z + ROOF_EDGE_LIFT], [b.x, b.y, b.z + ROOF_EDGE_LIFT]]);
+  const roofLines = named(segmentsToLines(lifted, MATERIALS.roofEdge), 'roofEdge');
+  roofLines.renderOrder = RENDER_ORDER.roofEdge;
+  group.add(roofLines);
 }
 
 /**
